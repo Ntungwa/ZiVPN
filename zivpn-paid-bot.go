@@ -1,14 +1,5 @@
 // zivpn-paid-bot.go
 // ZiVPN Telegram Bot (YinnStore)
-//
-// ✅ FIX (sesuai komplain terakhir lu):
-// 1) Halaman QRIS: loading DIHAPUS *setelah* QR berhasil terkirim.
-//    Kalau kirim QR gagal, bot kirim fallback text (detail + link QR) biar gak blank.
-// 2) Notif ke group: SEMUA isi pesan dibungkus quote (HTML <blockquote>), bukan cuma tengahnya.
-// 3) Result akun: saat main menu muncul setelah 6 detik, RESULT TIDAK DIHAPUS (result tidak di-track sebagai lastMessage).
-//
-// NOTE: token/api key yang pernah lu paste di chat itu rawan—mending rotate abis ini.
-
 package main
 
 import (
