@@ -47,7 +47,7 @@ load_env() {
 
 pause() {
   echo ""
-  read -rp "Press Enter to continue..."
+  read -rp "Press Enter to continue..." _
 }
 
 json_value() {
@@ -81,33 +81,60 @@ count_users() {
   local body users active expired
   body="$(api_get "/api/users")"
 
-  users="$(echo "$body" | grep -o '"password"' 2>/dev/null | wc -l)"
-  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' 2>/dev/null | wc -l)"
-  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' 2>/dev/null | wc -l)"
+  users="$(echo "$body" | grep -o '"password"' 2>/dev/null | wc -l | tr -d ' ')"
+  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' 2>/dev/null | wc -l | tr -d ' ')"
+  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' 2>/dev/null | wc -l | tr -d ' ')"
 
   TOTAL_USERS="${users:-0}"
   ACTIVE_USERS="${active:-0}"
   EXPIRED_USERS="${expired:-0}"
 }
 
+print_top_banner() {
+  echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC}${RED}        Welcome To Script Premium YINNSTORE ZIVPN         ${NC}${CYAN}║${NC}"
+  echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+}
+
+print_info_box() {
+  local core api bot
+  core="$(service_state zivpn.service)"
+  api="$(service_state zivpn-api.service)"
+  bot="$(service_state zivpn-bot.service)"
+
+  echo -e "${CYAN}>>> ${WHITE}INFORMATION YOUR ACTIVE SERVICE${NC} ${CYAN}<<<${NC}"
+  echo ""
+  echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+  printf "${CYAN}║${NC} ${WHITE}DOMAIN      ${NC}= %-42s ${CYAN}║${NC}\n" "${DOMAIN}"
+  printf "${CYAN}║${NC} ${WHITE}API         ${NC}= %-42s ${CYAN}║${NC}\n" "127.0.0.1:${API_PORT}"
+  printf "${CYAN}║${NC} ${WHITE}CORE        ${NC}= %-42s ${CYAN}║${NC}\n" "${core}"
+  printf "${CYAN}║${NC} ${WHITE}API STATUS  ${NC}= %-42s ${CYAN}║${NC}\n" "${api}"
+  printf "${CYAN}║${NC} ${WHITE}BOT STATUS  ${NC}= %-42s ${CYAN}║${NC}\n" "${bot}"
+  printf "${CYAN}║${NC} ${WHITE}TOTAL USER  ${NC}= %-42s ${CYAN}║${NC}\n" "${TOTAL_USERS}"
+  printf "${CYAN}║${NC} ${WHITE}ACTIVE USER ${NC}= %-42s ${CYAN}║${NC}\n" "${ACTIVE_USERS}"
+  printf "${CYAN}║${NC} ${WHITE}EXPIRED     ${NC}= %-42s ${CYAN}║${NC}\n" "${EXPIRED_USERS}"
+  echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+}
+
 header() {
   count_users
   clear
+  print_top_banner
 
-  echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}${CYAN}║                 YINNSTORE ZIVPN                   ║${NC}"
-  echo -e "${BOLD}${CYAN}║               PREMIUM VPS MENU PANEL              ║${NC}"
-  echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+  printf " ${GREEN}[%02d]${NC} %-24s ${GREEN}[%02d]${NC} %-24s\n" 1 "CREATE ACCOUNT" 6 "SYSTEM INFO"
+  printf " ${GREEN}[%02d]${NC} %-24s ${GREEN}[%02d]${NC} %-24s\n" 2 "CREATE TRIAL" 7 "RESTART SERVICES"
+  printf " ${GREEN}[%02d]${NC} %-24s ${GREEN}[%02d]${NC} %-24s\n" 3 "RENEW ACCOUNT" 8 "BACKUP / RESTORE"
+  printf " ${GREEN}[%02d]${NC} %-24s ${GREEN}[%02d]${NC} %-24s\n" 4 "DELETE ACCOUNT" 9 "LIST ACCOUNTS"
+  printf " ${GREEN}[%02d]${NC} %-24s ${RED}[%02d]${NC} %-24s\n" 5 "BOT / STATUS" 0 "EXIT"
+
   echo ""
-  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Domain" "${DOMAIN}"
-  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "API" "${BASE_URL}"
-  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Core Service" "$(service_state zivpn.service)"
-  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "API Service" "$(service_state zivpn-api.service)"
-  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Bot Service" "$(service_state zivpn-bot.service)"
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
-  printf "${BOLD}${GREEN} Active${NC}: %s   ${BOLD}${YELLOW}Expired${NC}: %s   ${BOLD}${CYAN}Total${NC}: %s\n" \
-    "${ACTIVE_USERS}" "${EXPIRED_USERS}" "${TOTAL_USERS}"
-  echo ""
+  print_info_box
 }
 
 print_result() {
@@ -125,13 +152,19 @@ print_result() {
   fi
 }
 
-create_account() {
+sub_header() {
   header
-  echo -e "${BOLD}${CYAN}CREATE PREMIUM ACCOUNT${NC}"
+  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${BOLD}${WHITE}$1${NC}"
+  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
+}
 
-  read -rp "Username/password account: " username
-  read -rp "Masa aktif (hari): " days
+create_account() {
+  sub_header "CREATE PREMIUM ACCOUNT"
+
+  read -rp "Username/password account : " username
+  read -rp "Masa aktif (hari)         : " days
 
   [[ -n "${username:-}" ]] || { echo -e "${RED}Username tidak boleh kosong${NC}"; pause; return; }
   [[ "${days:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Days harus angka${NC}"; pause; return; }
@@ -145,31 +178,26 @@ create_account() {
 
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
     echo ""
-    printf "${BOLD} Username ${NC}: %s\n" "${username}"
-    printf "${BOLD} Expired  ${NC}: %s\n" "${expired:--}"
-    printf "${BOLD} Domain   ${NC}: %s\n" "${domain:-$DOMAIN}"
-    printf "${BOLD} UDP Port ${NC}: %s\n" "5667"
+    printf "${WHITE}Username ${NC}: %s\n" "${username}"
+    printf "${WHITE}Expired  ${NC}: %s\n" "${expired:--}"
+    printf "${WHITE}Domain   ${NC}: %s\n" "${domain:-$DOMAIN}"
+    printf "${WHITE}UDP Port ${NC}: %s\n" "5667"
   fi
 
   pause
 }
 
 create_trial() {
-  header
-  echo -e "${BOLD}${YELLOW}CREATE TRIAL ACCOUNT${NC}"
-  echo ""
+  sub_header "CREATE TRIAL ACCOUNT"
 
   default_user="trial$(tr -dc a-z0-9 </dev/urandom | head -c 6)"
-  read -rp "Username trial [${default_user}]: " username
+  read -rp "Username trial [${default_user}] : " username
   username="${username:-$default_user}"
 
-  read -rp "Masa aktif menit: " minutes
+  read -rp "Masa aktif menit              : " minutes
   [[ "${minutes:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Menit harus angka${NC}"; pause; return; }
   (( minutes > 0 )) || { echo -e "${RED}Menit minimal 1${NC}"; pause; return; }
 
-  # API cuma support days, jadi trial menit disiasati:
-  # 1-1440 menit = 1 hari
-  # >1440 dibulatkan ke atas per hari
   days=$(( (minutes + 1439) / 1440 ))
   (( days < 1 )) && days=1
 
@@ -181,25 +209,23 @@ create_trial() {
 
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
     echo ""
-    printf "${BOLD} Trial User  ${NC}: %s\n" "${username}"
-    printf "${BOLD} Input Menit ${NC}: %s\n" "${minutes}"
-    printf "${BOLD} Hitung API  ${NC}: %s hari\n" "${days}"
-    printf "${BOLD} Expired     ${NC}: %s\n" "${expired:--}"
-    printf "${BOLD} Domain      ${NC}: %s\n" "${domain:-$DOMAIN}"
-    printf "${BOLD} UDP Port    ${NC}: %s\n" "5667"
-    printf "${YELLOW}Catatan${NC}: API bawaan cuma support hari, jadi menit dibulatkan ke hari terdekat.\n"
+    printf "${WHITE}Trial User  ${NC}: %s\n" "${username}"
+    printf "${WHITE}Input Menit ${NC}: %s\n" "${minutes}"
+    printf "${WHITE}Hitung API  ${NC}: %s hari\n" "${days}"
+    printf "${WHITE}Expired     ${NC}: %s\n" "${expired:--}"
+    printf "${WHITE}Domain      ${NC}: %s\n" "${domain:-$DOMAIN}"
+    printf "${WHITE}UDP Port    ${NC}: %s\n" "5667"
+    echo -e "${YELLOW}Catatan: API bawaan ZiVPN masih hitung hari.${NC}"
   fi
 
   pause
 }
 
 renew_account() {
-  header
-  echo -e "${BOLD}${GREEN}RENEW ACCOUNT${NC}"
-  echo ""
+  sub_header "RENEW ACCOUNT"
 
-  read -rp "Username: " username
-  read -rp "Tambah masa aktif (hari): " days
+  read -rp "Username                  : " username
+  read -rp "Tambah masa aktif (hari)  : " days
 
   [[ -n "${username:-}" ]] || { echo -e "${RED}Username tidak boleh kosong${NC}"; pause; return; }
   [[ "${days:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Days harus angka${NC}"; pause; return; }
@@ -210,16 +236,14 @@ renew_account() {
 
   expired="$(echo "$body" | json_value "expired")"
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
-    printf "${BOLD} Expired baru ${NC}: %s\n" "${expired:--}"
+    printf "${WHITE}Expired baru ${NC}: %s\n" "${expired:--}"
   fi
 
   pause
 }
 
 delete_account() {
-  header
-  echo -e "${BOLD}${RED}DELETE ACCOUNT${NC}"
-  echo ""
+  sub_header "DELETE ACCOUNT"
 
   body="$(api_get "/api/users")"
 
@@ -239,19 +263,19 @@ delete_account() {
     return
   fi
 
-  echo "List Akun:"
+  echo -e "${WHITE}List Akun:${NC}"
   for i in "${!user_list[@]}"; do
-    printf "[%02d] %s\n" "$((i+1))" "${user_list[$i]}"
+    printf "${GREEN}[%02d]${NC} %s\n" "$((i+1))" "${user_list[$i]}"
   done
   echo ""
 
-  read -rp "Pilih nomor akun yang mau dihapus: " pick
+  read -rp "Pilih nomor akun yang mau dihapus : " pick
   [[ "${pick:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Input harus angka${NC}"; pause; return; }
   (( pick >= 1 && pick <= ${#user_list[@]} )) || { echo -e "${RED}Nomor tidak valid${NC}"; pause; return; }
 
   username="${user_list[$((pick-1))]}"
 
-  read -rp "Yakin hapus ${username}? (y/N): " confirm
+  read -rp "Yakin hapus ${username}? (y/N)     : " confirm
   [[ "${confirm,,}" == "y" ]] || { echo -e "${YELLOW}Dibatalkan${NC}"; pause; return; }
 
   body="$(api_post "/api/user/delete" "{\"password\":\"${username}\"}")"
@@ -260,9 +284,7 @@ delete_account() {
 }
 
 list_accounts() {
-  header
-  echo -e "${BOLD}${MAGENTA}LIST ACCOUNTS${NC}"
-  echo ""
+  sub_header "LIST ACCOUNTS"
 
   body="$(api_get "/api/users")"
 
@@ -272,15 +294,15 @@ list_accounts() {
     return
   fi
 
-  printf "${BOLD}%-5s %-20s %-18s %-12s${NC}\n" "NO" "USERNAME" "EXPIRED" "STATUS"
-  echo "-------------------------------------------------------------------"
+  printf "${WHITE}%-6s %-20s %-18s %-12s${NC}\n" "NO" "USERNAME" "EXPIRED" "STATUS"
+  echo "------------------------------------------------------------------"
 
   no=1
   echo "$body" | tr '{' '\n' | grep '"password"' | while read -r row; do
     user="$(echo "$row" | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p')"
     exp="$(echo "$row" | sed -n 's/.*"expired":[[:space:]]*"\([^"]*\)".*/\1/p')"
     status="$(echo "$row" | sed -n 's/.*"status":[[:space:]]*"\([^"]*\)".*/\1/p')"
-    printf "%-5s %-20s %-18s %-12s\n" "[$(printf "%02d" "$no")]" "${user:--}" "${exp:--}" "${status:--}"
+    printf "%-6s %-20s %-18s %-12s\n" "[$(printf "%02d" "$no")]" "${user:--}" "${exp:--}" "${status:--}"
     no=$((no+1))
   done
 
@@ -288,9 +310,7 @@ list_accounts() {
 }
 
 system_info() {
-  header
-  echo -e "${BOLD}${BLUE}SYSTEM INFO${NC}"
-  echo ""
+  sub_header "SYSTEM INFO"
 
   body="$(api_get "/api/info")"
 
@@ -306,23 +326,21 @@ system_info() {
   port="$(echo "$body" | json_value "port")"
   service="$(echo "$body" | json_value "service")"
 
-  printf "${BOLD} %-12s ${NC}: %s\n" "Domain" "${domain:--}"
-  printf "${BOLD} %-12s ${NC}: %s\n" "Public IP" "${public_ip:--}"
-  printf "${BOLD} %-12s ${NC}: %s\n" "Private IP" "${private_ip:--}"
-  printf "${BOLD} %-12s ${NC}: %s\n" "Port" "${port:-5667}"
-  printf "${BOLD} %-12s ${NC}: %s\n" "Service" "${service:-zivpn}"
+  printf "${WHITE}Domain     ${NC}: %s\n" "${domain:--}"
+  printf "${WHITE}Public IP  ${NC}: %s\n" "${public_ip:--}"
+  printf "${WHITE}Private IP ${NC}: %s\n" "${private_ip:--}"
+  printf "${WHITE}Port       ${NC}: %s\n" "${port:-5667}"
+  printf "${WHITE}Service    ${NC}: %s\n" "${service:-zivpn}"
   echo ""
-  printf "${BOLD} %-12s ${NC}: %s\n" "zivpn" "$(service_state zivpn.service)"
-  printf "${BOLD} %-12s ${NC}: %s\n" "api" "$(service_state zivpn-api.service)"
-  printf "${BOLD} %-12s ${NC}: %s\n" "bot" "$(service_state zivpn-bot.service)"
+  printf "${WHITE}zivpn      ${NC}: %s\n" "$(service_state zivpn.service)"
+  printf "${WHITE}api        ${NC}: %s\n" "$(service_state zivpn-api.service)"
+  printf "${WHITE}bot        ${NC}: %s\n" "$(service_state zivpn-bot.service)"
 
   pause
 }
 
 restart_services() {
-  header
-  echo -e "${BOLD}${YELLOW}RESTART SERVICES${NC}"
-  echo ""
+  sub_header "RESTART SERVICES"
 
   for svc in zivpn.service zivpn-api.service zivpn-bot.service; do
     if systemctl list-unit-files | grep -q "^${svc}"; then
@@ -338,9 +356,7 @@ restart_services() {
 }
 
 backup_data() {
-  header
-  echo -e "${BOLD}${CYAN}BACKUP DATA${NC}"
-  echo ""
+  sub_header "BACKUP DATA"
 
   backup_dir="/root/zivpn-backup"
   mkdir -p "$backup_dir"
@@ -370,11 +386,9 @@ backup_data() {
 }
 
 restore_data() {
-  header
-  echo -e "${BOLD}${CYAN}RESTORE DATA${NC}"
-  echo ""
+  sub_header "RESTORE DATA"
 
-  read -rp "Masukkan path file backup .zip: " zipfile
+  read -rp "Masukkan path file backup .zip : " zipfile
   [[ -f "${zipfile:-}" ]] || { echo -e "${RED}File tidak ditemukan${NC}"; pause; return; }
 
   if ! command -v unzip >/dev/null 2>&1; then
@@ -402,30 +416,37 @@ restore_data() {
   pause
 }
 
+bot_status() {
+  sub_header "BOT / STATUS"
+
+  echo -e "${WHITE}Bot Service Status:${NC} $(service_state zivpn-bot.service)"
+  echo -e "${WHITE}API Service Status:${NC} $(service_state zivpn-api.service)"
+  echo -e "${WHITE}Core Service Status:${NC} $(service_state zivpn.service)"
+  echo ""
+  echo -e "${CYAN}Command menu tersedia:${NC}"
+  echo " - menu"
+  echo " - menu-zivpn"
+
+  pause
+}
+
 main_menu() {
   while true; do
     header
-
-    printf "${BOLD}${CYAN}[%s]${NC} Create Account        ${BOLD}${CYAN}[%s]${NC} System Info\n" "1" "6"
-    printf "${BOLD}${CYAN}[%s]${NC} Create Trial          ${BOLD}${CYAN}[%s]${NC} Restart Services\n" "2" "7"
-    printf "${BOLD}${CYAN}[%s]${NC} Renew Account         ${BOLD}${CYAN}[%s]${NC} Backup Data\n" "3" "8"
-    printf "${BOLD}${CYAN}[%s]${NC} Delete Account        ${BOLD}${CYAN}[%s]${NC} Restore Data\n" "4" "9"
-    printf "${BOLD}${CYAN}[%s]${NC} List Accounts         ${BOLD}${RED}[%s]${NC} Exit\n" "5" "0"
-
-    echo ""
-    read -rp "Select menu: " opt
+    echo -ne "${GREEN}SELECT OPTIONS ${NC}${CYAN}》 ${NC}"
+    read -r opt
 
     case "${opt:-}" in
-      1) create_account ;;
-      2) create_trial ;;
-      3) renew_account ;;
-      4) delete_account ;;
-      5) list_accounts ;;
-      6) system_info ;;
-      7) restart_services ;;
-      8) backup_data ;;
-      9) restore_data ;;
-      0) exit 0 ;;
+      1|01) create_account ;;
+      2|02) create_trial ;;
+      3|03) renew_account ;;
+      4|04) delete_account ;;
+      5|05) bot_status ;;
+      6|06) system_info ;;
+      7|07) restart_services ;;
+      8|08) backup_data; restore_data ;;
+      9|09) list_accounts ;;
+      0|00) clear; exit 0 ;;
       *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
     esac
   done
