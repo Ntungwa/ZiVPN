@@ -27,7 +27,7 @@ run_silent() {
   local msg="$1"
   local cmd="$2"
   print_task "$msg"
-  bash -c "$cmd" &>"$LOG_FILE" || print_fail "$msg"
+  bash -c "$cmd" &>>"$LOG_FILE" || print_fail "$msg"
   print_done "$msg"
 }
 
@@ -146,12 +146,20 @@ echo "$api_key" > /etc/zivpn/apikey
 
 print_task "Downloading config.json (anti-cache)"
 raw_wget "${REPO_RAW}/config.json" "/etc/zivpn/config.json" || print_fail "Downloading config.json"
+sed -i 's/\r$//' /etc/zivpn/config.json &>>"$LOG_FILE" || true
 print_done "Downloading config.json (anti-cache)"
 
 print_task "Downloading VPS menu"
 raw_wget "${REPO_RAW}/menu.sh" "/usr/local/bin/menu-zivpn" || print_fail "Downloading VPS menu"
+sed -i 's/\r$//' /usr/local/bin/menu-zivpn &>>"$LOG_FILE" || true
 chmod +x /usr/local/bin/menu-zivpn &>>"$LOG_FILE" || true
-ln -sf /usr/local/bin/menu-zivpn /usr/local/bin/menu
+
+cat >/usr/local/bin/menu <<'EOF'
+#!/bin/bash
+exec /usr/local/bin/menu-zivpn "$@"
+EOF
+chmod +x /usr/local/bin/menu &>>"$LOG_FILE" || true
+
 print_done "Downloading VPS menu"
 
 run_silent "Generating SSL" "openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj '/C=ID/ST=Jawa Barat/L=Bandung/O=YINNSTORE/OU=IT Department/CN=$domain' -keyout /etc/zivpn/zivpn.key -out /etc/zivpn/zivpn.crt"
@@ -161,7 +169,7 @@ run_silent "Generating SSL" "openssl req -new -newkey rsa:4096 -days 365 -nodes 
 # =========================
 print_task "Finding available API Port"
 API_PORT=8080
-while netstat -tuln | grep -q ":$API_PORT "; do
+while netstat -tuln 2>/dev/null | grep -q ":$API_PORT "; do
   ((API_PORT++))
 done
 echo "$API_PORT" > /etc/zivpn/api_port
@@ -224,6 +232,8 @@ EOF
 print_task "Downloading API sources (anti-cache)"
 raw_wget "${REPO_RAW}/zivpn-api.go" "/etc/zivpn/api/zivpn-api.go" || print_fail "Downloading zivpn-api.go"
 raw_wget "${REPO_RAW}/go.mod" "/etc/zivpn/api/go.mod" || print_fail "Downloading go.mod"
+sed -i 's/\r$//' /etc/zivpn/api/zivpn-api.go &>>"$LOG_FILE" || true
+sed -i 's/\r$//' /etc/zivpn/api/go.mod &>>"$LOG_FILE" || true
 print_done "Downloading API sources (anti-cache)"
 
 print_task "Compiling API"
@@ -269,6 +279,7 @@ EOF
 
   print_task "Downloading Bot source (anti-cache)"
   raw_wget "${REPO_RAW}/${bot_file}" "/etc/zivpn/api/${bot_file}" || print_fail "Downloading bot source"
+  sed -i 's/\r$//' "/etc/zivpn/api/${bot_file}" &>>"$LOG_FILE" || true
   print_done "Downloading Bot source (anti-cache)"
 
   print_task "Compiling Bot"
@@ -314,7 +325,7 @@ fi
 # CRON AUTO-EXPIRE (SAFE)
 # =========================
 print_task "Configuring Cron Auto-Expire"
-cron_cmd="0 0 * * * /usr/bin/curl -s -X POST -H \"X-API-Key: \$(cat /etc/zivpn/apikey)\" http://127.0.0.1:\$(cat /etc/zivpn/api_port)/api/cron/expire >> /var/log/zivpn-cron.log 2>&1"
+cron_cmd='0 0 * * * /usr/bin/curl -s -X POST -H "X-API-Key: $(cat /etc/zivpn/apikey)" http://127.0.0.1:$(cat /etc/zivpn/api_port)/api/cron/expire >> /var/log/zivpn-cron.log 2>&1'
 (crontab -l 2>/dev/null | grep -v "/api/cron/expire" || true; echo "$cron_cmd") | crontab -
 print_done "Configuring Cron Auto-Expire"
 
@@ -333,7 +344,7 @@ ufw_allow_safe "${API_PORT}/tcp"
 # =========================
 # FINISH
 # =========================
-rm -f "$0" install.tmp install.log &>>"$LOG_FILE" || true
+hash -r || true
 
 echo ""
 echo -e "${BOLD}Installation Complete${RESET}"
