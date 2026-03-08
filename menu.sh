@@ -1,11 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# =========================
-# ZiVPN VPS Menu
-# YinnStore Edition
-# =========================
-
 API_KEY_FILE="/etc/zivpn/apikey"
 API_PORT_FILE="/etc/zivpn/api_port"
 DOMAIN_FILE="/etc/zivpn/domain"
@@ -15,8 +10,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[1;34m'
 CYAN='\033[1;36m'
+MAGENTA='\033[1;35m'
 BOLD='\033[1m'
 GRAY='\033[1;30m'
+WHITE='\033[1;37m'
 NC='\033[0m'
 
 TRIAL_DAYS=1
@@ -39,16 +36,6 @@ load_env() {
   [[ -f "$DOMAIN_FILE" ]] && DOMAIN="$(tr -d '\r\n' < "$DOMAIN_FILE")"
 
   BASE_URL="http://127.0.0.1:${API_PORT}"
-}
-
-header() {
-  clear
-  echo -e "${BOLD}${CYAN}╔══════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}${CYAN}║         ZiVPN VPS MENU PANEL        ║${NC}"
-  echo -e "${BOLD}${CYAN}╚══════════════════════════════════════╝${NC}"
-  echo -e "${GRAY}Domain :${NC} ${DOMAIN}"
-  echo -e "${GRAY}API    :${NC} ${BASE_URL}"
-  echo ""
 }
 
 pause() {
@@ -78,6 +65,44 @@ api_get() {
     -H "X-API-Key: ${API_KEY}"
 }
 
+service_state() {
+  local svc="$1"
+  systemctl is-active "$svc" 2>/dev/null || echo "inactive"
+}
+
+count_users() {
+  local body users active expired
+  body="$(api_get "/api/users" 2>/dev/null || true)"
+
+  users="$(echo "$body" | grep -o '"password"' | wc -l)"
+  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' | wc -l)"
+  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' | wc -l)"
+
+  TOTAL_USERS="${users:-0}"
+  ACTIVE_USERS="${active:-0}"
+  EXPIRED_USERS="${expired:-0}"
+}
+
+header() {
+  count_users
+  clear
+
+  echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+  echo -e "${BOLD}${CYAN}║                 YINNSTORE ZIVPN                   ║${NC}"
+  echo -e "${BOLD}${CYAN}║               PREMIUM VPS MENU PANEL              ║${NC}"
+  echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+  echo ""
+  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Domain" "${DOMAIN}"
+  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "API" "${BASE_URL}"
+  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Core Service" "$(service_state zivpn.service)"
+  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "API Service" "$(service_state zivpn-api.service)"
+  printf "${BOLD}${WHITE} %-14s ${NC}: %s\n" "Bot Service" "$(service_state zivpn-bot.service)"
+  echo ""
+  printf "${BOLD}${GREEN} Active${NC}: %s   ${BOLD}${YELLOW}Expired${NC}: %s   ${BOLD}${CYAN}Total${NC}: %s\n" \
+    "${ACTIVE_USERS}" "${EXPIRED_USERS}" "${TOTAL_USERS}"
+  echo ""
+}
+
 print_result() {
   local body="$1"
   local success
@@ -95,7 +120,7 @@ print_result() {
 
 create_account() {
   header
-  echo -e "${BOLD}CREATE ACCOUNT${NC}"
+  echo -e "${BOLD}${CYAN}CREATE PREMIUM ACCOUNT${NC}"
   echo ""
 
   read -rp "Username/password account: " username
@@ -113,10 +138,10 @@ create_account() {
 
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
     echo ""
-    echo -e "${CYAN}Username :${NC} ${username}"
-    echo -e "${CYAN}Expired  :${NC} ${expired:--}"
-    echo -e "${CYAN}Domain   :${NC} ${domain:-$DOMAIN}"
-    echo -e "${CYAN}Port UDP :${NC} 5667"
+    printf "${BOLD} Username ${NC}: %s\n" "${username}"
+    printf "${BOLD} Expired  ${NC}: %s\n" "${expired:--}"
+    printf "${BOLD} Domain   ${NC}: %s\n" "${domain:-$DOMAIN}"
+    printf "${BOLD} UDP Port ${NC}: %s\n" "5667"
   fi
 
   pause
@@ -124,7 +149,7 @@ create_account() {
 
 create_trial() {
   header
-  echo -e "${BOLD}CREATE TRIAL ACCOUNT${NC}"
+  echo -e "${BOLD}${YELLOW}CREATE TRIAL ACCOUNT${NC}"
   echo ""
 
   default_user="trial$(tr -dc a-z0-9 </dev/urandom | head -c 6)"
@@ -139,11 +164,11 @@ create_trial() {
 
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
     echo ""
-    echo -e "${CYAN}Trial User :${NC} ${username}"
-    echo -e "${CYAN}Expired    :${NC} ${expired:--}"
-    echo -e "${CYAN}Domain     :${NC} ${domain:-$DOMAIN}"
-    echo -e "${CYAN}Port UDP   :${NC} 5667"
-    echo -e "${YELLOW}Catatan    :${NC} Trial memakai ${TRIAL_DAYS} hari"
+    printf "${BOLD} Trial User ${NC}: %s\n" "${username}"
+    printf "${BOLD} Expired    ${NC}: %s\n" "${expired:--}"
+    printf "${BOLD} Domain     ${NC}: %s\n" "${domain:-$DOMAIN}"
+    printf "${BOLD} UDP Port   ${NC}: %s\n" "5667"
+    printf "${BOLD} Note       ${NC}: %s hari\n" "${TRIAL_DAYS}"
   fi
 
   pause
@@ -151,7 +176,7 @@ create_trial() {
 
 renew_account() {
   header
-  echo -e "${BOLD}RENEW ACCOUNT${NC}"
+  echo -e "${BOLD}${GREEN}RENEW ACCOUNT${NC}"
   echo ""
 
   read -rp "Username: " username
@@ -166,7 +191,7 @@ renew_account() {
 
   expired="$(echo "$body" | json_value "expired")"
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
-    echo -e "${CYAN}Expired baru:${NC} ${expired:--}"
+    printf "${BOLD} Expired baru ${NC}: %s\n" "${expired:--}"
   fi
 
   pause
@@ -174,7 +199,7 @@ renew_account() {
 
 delete_account() {
   header
-  echo -e "${BOLD}DELETE ACCOUNT${NC}"
+  echo -e "${BOLD}${RED}DELETE ACCOUNT${NC}"
   echo ""
 
   read -rp "Username yang mau dihapus: " username
@@ -190,7 +215,7 @@ delete_account() {
 
 list_accounts() {
   header
-  echo -e "${BOLD}LIST ACCOUNTS${NC}"
+  echo -e "${BOLD}${MAGENTA}LIST ACCOUNTS${NC}"
   echo ""
 
   body="$(api_get "/api/users")"
@@ -201,14 +226,14 @@ list_accounts() {
     return
   fi
 
-  echo -e "${BOLD}User                Expired         Status${NC}"
-  echo "------------------------------------------------------"
+  printf "${BOLD}%-20s %-18s %-12s${NC}\n" "USERNAME" "EXPIRED" "STATUS"
+  echo "--------------------------------------------------------------"
 
   echo "$body" | tr '{' '\n' | grep '"password"' | while read -r row; do
     user="$(echo "$row" | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p')"
     exp="$(echo "$row" | sed -n 's/.*"expired":[[:space:]]*"\([^"]*\)".*/\1/p')"
     status="$(echo "$row" | sed -n 's/.*"status":[[:space:]]*"\([^"]*\)".*/\1/p')"
-    printf "%-18s %-15s %s\n" "${user:--}" "${exp:--}" "${status:--}"
+    printf "%-20s %-18s %-12s\n" "${user:--}" "${exp:--}" "${status:--}"
   done
 
   pause
@@ -216,7 +241,7 @@ list_accounts() {
 
 system_info() {
   header
-  echo -e "${BOLD}SYSTEM INFO${NC}"
+  echo -e "${BOLD}${BLUE}SYSTEM INFO${NC}"
   echo ""
 
   body="$(api_get "/api/info")"
@@ -233,24 +258,22 @@ system_info() {
   port="$(echo "$body" | json_value "port")"
   service="$(echo "$body" | json_value "service")"
 
-  echo -e "${CYAN}Domain    :${NC} ${domain:--}"
-  echo -e "${CYAN}Public IP :${NC} ${public_ip:--}"
-  echo -e "${CYAN}Private IP:${NC} ${private_ip:--}"
-  echo -e "${CYAN}Port      :${NC} ${port:-5667}"
-  echo -e "${CYAN}Service   :${NC} ${service:-zivpn}"
-
+  printf "${BOLD} %-12s ${NC}: %s\n" "Domain" "${domain:--}"
+  printf "${BOLD} %-12s ${NC}: %s\n" "Public IP" "${public_ip:--}"
+  printf "${BOLD} %-12s ${NC}: %s\n" "Private IP" "${private_ip:--}"
+  printf "${BOLD} %-12s ${NC}: %s\n" "Port" "${port:-5667}"
+  printf "${BOLD} %-12s ${NC}: %s\n" "Service" "${service:-zivpn}"
   echo ""
-  echo -e "${BOLD}Service Status${NC}"
-  systemctl is-active zivpn.service 2>/dev/null || true
-  systemctl is-active zivpn-api.service 2>/dev/null || true
-  systemctl is-active zivpn-bot.service 2>/dev/null || true
+  printf "${BOLD} %-12s ${NC}: %s\n" "zivpn" "$(service_state zivpn.service)"
+  printf "${BOLD} %-12s ${NC}: %s\n" "api" "$(service_state zivpn-api.service)"
+  printf "${BOLD} %-12s ${NC}: %s\n" "bot" "$(service_state zivpn-bot.service)"
 
   pause
 }
 
 restart_services() {
   header
-  echo -e "${BOLD}RESTART SERVICES${NC}"
+  echo -e "${BOLD}${YELLOW}RESTART SERVICES${NC}"
   echo ""
 
   for svc in zivpn.service zivpn-api.service zivpn-bot.service; do
@@ -268,7 +291,7 @@ restart_services() {
 
 backup_data() {
   header
-  echo -e "${BOLD}BACKUP DATA${NC}"
+  echo -e "${BOLD}${CYAN}BACKUP DATA${NC}"
   echo ""
 
   backup_dir="/root/zivpn-backup"
@@ -300,7 +323,7 @@ backup_data() {
 
 restore_data() {
   header
-  echo -e "${BOLD}RESTORE DATA${NC}"
+  echo -e "${BOLD}${CYAN}RESTORE DATA${NC}"
   echo ""
 
   read -rp "Masukkan path file backup .zip: " zipfile
@@ -334,18 +357,13 @@ restore_data() {
 main_menu() {
   while true; do
     header
-    cat <<EOF
-${BOLD}1.${NC} Create Account
-${BOLD}2.${NC} Create Trial
-${BOLD}3.${NC} Renew Account
-${BOLD}4.${NC} Delete Account
-${BOLD}5.${NC} List Accounts
-${BOLD}6.${NC} System Info
-${BOLD}7.${NC} Restart Services
-${BOLD}8.${NC} Backup Data
-${BOLD}9.${NC} Restore Data
-${BOLD}0.${NC} Exit
-EOF
+
+    printf "${BOLD}${CYAN}[%s]${NC} Create Account        ${BOLD}${CYAN}[%s]${NC} System Info\n" "1" "6"
+    printf "${BOLD}${CYAN}[%s]${NC} Create Trial          ${BOLD}${CYAN}[%s]${NC} Restart Services\n" "2" "7"
+    printf "${BOLD}${CYAN}[%s]${NC} Renew Account         ${BOLD}${CYAN}[%s]${NC} Backup Data\n" "3" "8"
+    printf "${BOLD}${CYAN}[%s]${NC} Delete Account        ${BOLD}${CYAN}[%s]${NC} Restore Data\n" "4" "9"
+    printf "${BOLD}${CYAN}[%s]${NC} List Accounts         ${BOLD}${RED} [%s]${NC} Exit\n" "5" "0"
+
     echo ""
     read -rp "Select menu: " opt
 
