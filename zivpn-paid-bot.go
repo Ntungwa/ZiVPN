@@ -260,6 +260,20 @@ func genPassword(n int) string {
 	return b.String()
 }
 
+func genDigits(n int) string {
+    const digits = "0123456789"
+    var b strings.Builder
+    for i := 0; i < n; i++ {
+        idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
+        if err != nil {
+            b.WriteByte('0')
+            continue
+        }
+        b.WriteByte(digits[idx.Int64()])
+    }
+    return b.String()
+}
+
 func serverNameFromISP(isp string) string {
 	isp = strings.TrimSpace(isp)
 	if isp == "" {
@@ -704,7 +718,7 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, cfg *BotCon
 		sendPlain(bot, chatID, "🔐 Masukkan Password Baru:")
 
 	case data == "trial_confirm":
-		pw := genPassword(8)
+        pw := "YinnTrialX" + genDigits(5)
 
 		if userID != cfg.AdminID {
 			rem := trialRemaining(userID, cfg.AdminID)
