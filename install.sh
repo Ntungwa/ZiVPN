@@ -98,6 +98,8 @@ if [[ -f /usr/local/bin/zivpn || -d /etc/zivpn ]]; then
   systemctl daemon-reload &>>"$LOG_FILE" || true
 
   rm -f /usr/local/bin/zivpn &>>"$LOG_FILE" || true
+  rm -f /usr/local/bin/menu-zivpn &>>"$LOG_FILE" || true
+  rm -f /usr/local/bin/menu &>>"$LOG_FILE" || true
   rm -f /etc/zivpn/api/zivpn-api /etc/zivpn/api/zivpn-bot &>>"$LOG_FILE" || true
 fi
 
@@ -105,7 +107,7 @@ fi
 # BASE DEPENDENCIES
 # =========================
 run_silent "Updating system" "apt-get update -y"
-run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables"
+run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables zip unzip"
 run_silent "Setting Timezone" "timedatectl set-timezone Asia/Jakarta || true"
 
 if ! command -v go &>/dev/null; then
@@ -145,6 +147,12 @@ echo "$api_key" > /etc/zivpn/apikey
 print_task "Downloading config.json (anti-cache)"
 raw_wget "${REPO_RAW}/config.json" "/etc/zivpn/config.json" || print_fail "Downloading config.json"
 print_done "Downloading config.json (anti-cache)"
+
+print_task "Downloading VPS menu"
+raw_wget "${REPO_RAW}/menu.sh" "/usr/local/bin/menu-zivpn" || print_fail "Downloading VPS menu"
+chmod +x /usr/local/bin/menu-zivpn &>>"$LOG_FILE" || true
+ln -sf /usr/local/bin/menu-zivpn /usr/local/bin/menu
+print_done "Downloading VPS menu"
 
 run_silent "Generating SSL" "openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj '/C=ID/ST=Jawa Barat/L=Bandung/O=YINNSTORE/OU=IT Department/CN=$domain' -keyout /etc/zivpn/zivpn.key -out /etc/zivpn/zivpn.crt"
 
@@ -244,7 +252,7 @@ WantedBy=multi-user.target
 EOF
 
 # =========================
-# BOT OPTIONAL
+# BOT SETUP (PAID ONLY)
 # =========================
 echo ""
 echo -ne "${BOLD}Telegram Bot Configuration${RESET}\n"
@@ -253,27 +261,11 @@ read -rp "Bot Token: " bot_token
 read -rp "Admin ID : " admin_id
 
 if [[ -n "${bot_token:-}" && -n "${admin_id:-}" ]]; then
-  echo ""
-  echo "Select Bot Type:"
-  echo "1) Free (Admin Only / Public Mode)"
-  echo "2) Paid (Pakasir Payment Gateway)"
-  read -rp "Choice [2]: " bot_type
-  bot_type="${bot_type:-2}"
-
-  if [[ "$bot_type" == "2" ]]; then
-    # ✅ Pakasir & harga diset dari Admin Panel bot nanti
-    cat >/etc/zivpn/bot-config.json <<EOF
+  cat >/etc/zivpn/bot-config.json <<EOF
 {"bot_token":"$bot_token","admin_id":$admin_id,"mode":"public","domain":"$domain","pakasir_slug":"","pakasir_api_key":"","daily_price":0}
 EOF
-    bot_file="zivpn-paid-bot.go"
-  else
-    read -rp "Bot Mode (public/private) [default: private]: " bot_mode
-    bot_mode="${bot_mode:-private}"
-    cat >/etc/zivpn/bot-config.json <<EOF
-{"bot_token":"$bot_token","admin_id":$admin_id,"mode":"$bot_mode","domain":"$domain"}
-EOF
-    bot_file="zivpn-bot.go"
-  fi
+
+  bot_file="zivpn-paid-bot.go"
 
   print_task "Downloading Bot source (anti-cache)"
   raw_wget "${REPO_RAW}/${bot_file}" "/etc/zivpn/api/${bot_file}" || print_fail "Downloading bot source"
@@ -289,7 +281,7 @@ EOF
 
   cat >/etc/systemd/system/zivpn-bot.service <<EOF
 [Unit]
-Description=ZiVPN Telegram Bot (YinnStore)
+Description=ZiVPN Telegram Bot Paid (YinnStore)
 After=network.target zivpn-api.service
 
 [Service]
@@ -312,7 +304,7 @@ fi
 # =========================
 run_silent "Reloading systemd" "systemctl daemon-reload"
 run_silent "Starting core" "systemctl enable --now zivpn.service"
-run_silent "Starting API"  "systemctl enable --now zivpn-api.service"
+run_silent "Starting API" "systemctl enable --now zivpn-api.service"
 
 if [[ -f /etc/systemd/system/zivpn-bot.service ]]; then
   run_silent "Starting Bot" "systemctl enable --now zivpn-bot.service"
@@ -348,6 +340,7 @@ echo -e "${BOLD}Installation Complete${RESET}"
 echo -e "Domain  : ${CYAN}$domain${RESET}"
 echo -e "API     : ${CYAN}$API_PORT${RESET}"
 echo -e "Token   : ${CYAN}$api_key${RESET}"
+echo -e "Menu    : ${CYAN}menu-zivpn / menu${RESET}"
 echo -e "Dev     : ${CYAN}https://t.me/yinnprovpn${RESET}"
 echo ""
 echo -e "${GRAY}Log: $LOG_FILE${RESET}"
