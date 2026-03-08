@@ -101,6 +101,7 @@ if [[ -f /usr/local/bin/zivpn || -d /etc/zivpn ]]; then
   rm -f /usr/local/bin/menu-zivpn &>>"$LOG_FILE" || true
   rm -f /usr/local/bin/menu &>>"$LOG_FILE" || true
   rm -f /etc/profile.d/zivpn-menu.sh &>>"$LOG_FILE" || true
+  rm -f /etc/profile.d/zivpn-welcome.sh &>>"$LOG_FILE" || true
   rm -f /etc/zivpn/api/zivpn-api /etc/zivpn/api/zivpn-bot &>>"$LOG_FILE" || true
 fi
 
@@ -162,10 +163,9 @@ EOF
 chmod +x /usr/local/bin/menu &>>"$LOG_FILE" || true
 print_done "Downloading VPS menu"
 
-print_task "Configuring auto menu on login"
-cat >/etc/profile.d/zivpn-menu.sh <<'EOF'
+print_task "Configuring welcome text"
+cat >/etc/profile.d/zivpn-welcome.sh <<'EOF'
 #!/bin/bash
-
 case "$-" in
   *i*) ;;
   *) return 0 2>/dev/null || exit 0 ;;
@@ -173,17 +173,18 @@ esac
 
 [ -t 0 ] || return 0 2>/dev/null || exit 0
 
-[[ "${ZIVPN_MENU_ACTIVE:-0}" == "1" ]] && return 0 2>/dev/null || exit 0
-
-if [ "$(id -u)" != "0" ]; then
-  return 0 2>/dev/null || exit 0
+if [ "$(id -u)" = "0" ]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo " Welcome To YINNSTORE ZIVPN"
+  echo " Ketik 'menu' untuk buka panel"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
 fi
-
-export ZIVPN_MENU_ACTIVE=1
-/usr/local/bin/menu-zivpn
 EOF
-chmod +x /etc/profile.d/zivpn-menu.sh &>>"$LOG_FILE" || true
-print_done "Configuring auto menu on login"
+chmod +x /etc/profile.d/zivpn-welcome.sh &>>"$LOG_FILE" || true
+rm -f /etc/profile.d/zivpn-menu.sh &>>"$LOG_FILE" || true
+print_done "Configuring welcome text"
 
 run_silent "Generating SSL" "openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj '/C=ID/ST=Jawa Barat/L=Bandung/O=YINNSTORE/OU=IT Department/CN=$domain' -keyout /etc/zivpn/zivpn.key -out /etc/zivpn/zivpn.crt"
 
@@ -375,7 +376,7 @@ echo -e "Domain  : ${CYAN}$domain${RESET}"
 echo -e "API     : ${CYAN}$API_PORT${RESET}"
 echo -e "Token   : ${CYAN}$api_key${RESET}"
 echo -e "Menu    : ${CYAN}menu-zivpn / menu${RESET}"
-echo -e "Auto    : ${CYAN}menu tampil otomatis saat login root${RESET}"
+echo -e "Login   : ${CYAN}normal, tidak auto buka menu${RESET}"
 echo -e "Dev     : ${CYAN}https://t.me/yinnprovpn${RESET}"
 echo ""
 echo -e "${GRAY}Log: $LOG_FILE${RESET}"
