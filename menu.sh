@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -u
 
 API_KEY_FILE="/etc/zivpn/apikey"
 API_PORT_FILE="/etc/zivpn/api_port"
@@ -16,8 +16,13 @@ GRAY='\033[1;30m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-TRIAL_DAYS=1
 BASE_URL=""
+API_KEY=""
+API_PORT=""
+DOMAIN="-"
+TOTAL_USERS="0"
+ACTIVE_USERS="0"
+EXPIRED_USERS="0"
 
 need_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -30,10 +35,12 @@ load_env() {
   [[ -f "$API_KEY_FILE" ]] || { echo -e "${RED}API key file not found: $API_KEY_FILE${NC}"; exit 1; }
   [[ -f "$API_PORT_FILE" ]] || { echo -e "${RED}API port file not found: $API_PORT_FILE${NC}"; exit 1; }
 
-  API_KEY="$(tr -d '\r\n' < "$API_KEY_FILE")"
-  API_PORT="$(tr -d '\r\n' < "$API_PORT_FILE")"
-  DOMAIN="-"
-  [[ -f "$DOMAIN_FILE" ]] && DOMAIN="$(tr -d '\r\n' < "$DOMAIN_FILE")"
+  API_KEY="$(tr -d '\r\n' < "$API_KEY_FILE" 2>/dev/null)"
+  API_PORT="$(tr -d '\r\n' < "$API_PORT_FILE" 2>/dev/null)"
+
+  if [[ -f "$DOMAIN_FILE" ]]; then
+    DOMAIN="$(tr -d '\r\n' < "$DOMAIN_FILE" 2>/dev/null)"
+  fi
 
   BASE_URL="http://127.0.0.1:${API_PORT}"
 }
@@ -55,14 +62,14 @@ api_post() {
   curl -sS -X POST "${BASE_URL}${endpoint}" \
     -H "Content-Type: application/json" \
     -H "X-API-Key: ${API_KEY}" \
-    -d "${payload}"
+    -d "${payload}" 2>/dev/null || true
 }
 
 api_get() {
   local endpoint="$1"
 
   curl -sS "${BASE_URL}${endpoint}" \
-    -H "X-API-Key: ${API_KEY}"
+    -H "X-API-Key: ${API_KEY}" 2>/dev/null || true
 }
 
 service_state() {
@@ -72,11 +79,11 @@ service_state() {
 
 count_users() {
   local body users active expired
-  body="$(api_get "/api/users" 2>/dev/null || true)"
+  body="$(api_get "/api/users")"
 
-  users="$(echo "$body" | grep -o '"password"' | wc -l)"
-  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' | wc -l)"
-  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' | wc -l)"
+  users="$(echo "$body" | grep -o '"password"' 2>/dev/null | wc -l)"
+  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' 2>/dev/null | wc -l)"
+  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' 2>/dev/null | wc -l)"
 
   TOTAL_USERS="${users:-0}"
   ACTIVE_USERS="${active:-0}"
@@ -156,7 +163,17 @@ create_trial() {
   read -rp "Username trial [${default_user}]: " username
   username="${username:-$default_user}"
 
-  body="$(api_post "/api/user/create" "{\"password\":\"${username}\",\"days\":${TRIAL_DAYS}}")"
+  read -rp "Masa aktif menit: " minutes
+  [[ "${minutes:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Menit harus angka${NC}"; pause; return; }
+  (( minutes > 0 )) || { echo -e "${RED}Menit minimal 1${NC}"; pause; return; }
+
+  # API cuma support days, jadi trial menit disiasati:
+  # 1-1440 menit = 1 hari
+  # >1440 dibulatkan ke atas per hari
+  days=$(( (minutes + 1439) / 1440 ))
+  (( days < 1 )) && days=1
+
+  body="$(api_post "/api/user/create" "{\"password\":\"${username}\",\"days\":${days}}")"
   print_result "$body"
 
   domain="$(echo "$body" | json_value "domain")"
@@ -164,11 +181,13 @@ create_trial() {
 
   if echo "$body" | grep -q '"success":[[:space:]]*true'; then
     echo ""
-    printf "${BOLD} Trial User ${NC}: %s\n" "${username}"
-    printf "${BOLD} Expired    ${NC}: %s\n" "${expired:--}"
-    printf "${BOLD} Domain     ${NC}: %s\n" "${domain:-$DOMAIN}"
-    printf "${BOLD} UDP Port   ${NC}: %s\n" "5667"
-    printf "${BOLD} Note       ${NC}: %s hari\n" "${TRIAL_DAYS}"
+    printf "${BOLD} Trial User  ${NC}: %s\n" "${username}"
+    printf "${BOLD} Input Menit ${NC}: %s\n" "${minutes}"
+    printf "${BOLD} Hitung API  ${NC}: %s hari\n" "${days}"
+    printf "${BOLD} Expired     ${NC}: %s\n" "${expired:--}"
+    printf "${BOLD} Domain      ${NC}: %s\n" "${domain:-$DOMAIN}"
+    printf "${BOLD} UDP Port    ${NC}: %s\n" "5667"
+    printf "${YELLOW}Catatan${NC}: API bawaan cuma support hari, jadi menit dibulatkan ke hari terdekat.\n"
   fi
 
   pause
@@ -202,8 +221,35 @@ delete_account() {
   echo -e "${BOLD}${RED}DELETE ACCOUNT${NC}"
   echo ""
 
-  read -rp "Username yang mau dihapus: " username
-  [[ -n "${username:-}" ]] || { echo -e "${RED}Username tidak boleh kosong${NC}"; pause; return; }
+  body="$(api_get "/api/users")"
+
+  if ! echo "$body" | grep -q '"success":[[:space:]]*true'; then
+    print_result "$body"
+    pause
+    return
+  fi
+
+  mapfile -t user_list < <(
+    echo "$body" | tr '{' '\n' | grep '"password"' | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p'
+  )
+
+  if [[ "${#user_list[@]}" -eq 0 ]]; then
+    echo -e "${YELLOW}Tidak ada akun untuk dihapus${NC}"
+    pause
+    return
+  fi
+
+  echo "List Akun:"
+  for i in "${!user_list[@]}"; do
+    printf "[%02d] %s\n" "$((i+1))" "${user_list[$i]}"
+  done
+  echo ""
+
+  read -rp "Pilih nomor akun yang mau dihapus: " pick
+  [[ "${pick:-}" =~ ^[0-9]+$ ]] || { echo -e "${RED}Input harus angka${NC}"; pause; return; }
+  (( pick >= 1 && pick <= ${#user_list[@]} )) || { echo -e "${RED}Nomor tidak valid${NC}"; pause; return; }
+
+  username="${user_list[$((pick-1))]}"
 
   read -rp "Yakin hapus ${username}? (y/N): " confirm
   [[ "${confirm,,}" == "y" ]] || { echo -e "${YELLOW}Dibatalkan${NC}"; pause; return; }
@@ -226,14 +272,16 @@ list_accounts() {
     return
   fi
 
-  printf "${BOLD}%-20s %-18s %-12s${NC}\n" "USERNAME" "EXPIRED" "STATUS"
-  echo "--------------------------------------------------------------"
+  printf "${BOLD}%-5s %-20s %-18s %-12s${NC}\n" "NO" "USERNAME" "EXPIRED" "STATUS"
+  echo "-------------------------------------------------------------------"
 
+  no=1
   echo "$body" | tr '{' '\n' | grep '"password"' | while read -r row; do
     user="$(echo "$row" | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p')"
     exp="$(echo "$row" | sed -n 's/.*"expired":[[:space:]]*"\([^"]*\)".*/\1/p')"
     status="$(echo "$row" | sed -n 's/.*"status":[[:space:]]*"\([^"]*\)".*/\1/p')"
-    printf "%-20s %-18s %-12s\n" "${user:--}" "${exp:--}" "${status:--}"
+    printf "%-5s %-20s %-18s %-12s\n" "[$(printf "%02d" "$no")]" "${user:--}" "${exp:--}" "${status:--}"
+    no=$((no+1))
   done
 
   pause
@@ -362,7 +410,7 @@ main_menu() {
     printf "${BOLD}${CYAN}[%s]${NC} Create Trial          ${BOLD}${CYAN}[%s]${NC} Restart Services\n" "2" "7"
     printf "${BOLD}${CYAN}[%s]${NC} Renew Account         ${BOLD}${CYAN}[%s]${NC} Backup Data\n" "3" "8"
     printf "${BOLD}${CYAN}[%s]${NC} Delete Account        ${BOLD}${CYAN}[%s]${NC} Restore Data\n" "4" "9"
-    printf "${BOLD}${CYAN}[%s]${NC} List Accounts         ${BOLD}${RED} [%s]${NC} Exit\n" "5" "0"
+    printf "${BOLD}${CYAN}[%s]${NC} List Accounts         ${BOLD}${RED}[%s]${NC} Exit\n" "5" "0"
 
     echo ""
     read -rp "Select menu: " opt
