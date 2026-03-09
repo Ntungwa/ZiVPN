@@ -48,15 +48,15 @@ const (
 // ==========================================
 
 var (
-	ApiUrl = "http://127.0.0.1:8787/api"
-	ApiKey = "CHANGE_ME" // overridden by /etc/zivpn/apikey
-    resultMu         = &sync.Mutex{}
+	ApiUrl           = "http://127.0.0.1:8787/api"
+	ApiKey           = "CHANGE_ME" // overridden by /etc/zivpn/apikey
+	resultMu         = &sync.Mutex{}
 	resultMessageIDs = make(map[int64]int) // chatID -> msgID result akun
-	mutex          = &sync.Mutex{}
-	lastMu         = &sync.Mutex{}
-	userStates     = make(map[int64]string)            // userID -> state
-	tempUserData   = make(map[int64]map[string]string) // userID -> temp
-	lastMessageIDs = make(map[int64]int)               // chatID -> msgID (UI clean)
+	mutex            = &sync.Mutex{}
+	lastMu           = &sync.Mutex{}
+	userStates       = make(map[int64]string)            // userID -> state
+	tempUserData     = make(map[int64]map[string]string) // userID -> temp
+	lastMessageIDs   = make(map[int64]int)               // chatID -> msgID (UI clean)
 
 	botStart = time.Now()
 )
@@ -112,8 +112,8 @@ type TrialUserState struct {
 // bot state persistence (join users + stats)
 type BotState struct {
 	Users          map[string]*BotUser `json:"users"`
-	TotalAccounts  int                `json:"total_accounts"`
-	AccountCreated []int64            `json:"account_created"` // unix timestamps
+	TotalAccounts  int                 `json:"total_accounts"`
+	AccountCreated []int64             `json:"account_created"` // unix timestamps
 }
 type BotUser struct {
 	ID        int64  `json:"id"`
@@ -140,16 +140,18 @@ const (
 	btnBuyConfirm   = "✅ 𝙆𝙊𝙉𝙁𝙄𝙍𝙈𝘼𝙎𝙄 𝙊𝙍𝘿𝙀𝙍"
 	btnTrialConfirm = "✅ 𝘾𝙊𝘽𝘼 𝙏𝙍𝙄𝘼𝙇"
 
-	btnUsers    = "👥 𝙐𝙎𝙀𝙍 𝙈𝘼𝙉𝘼𝙂𝙀𝙍"
-	btnPaySet   = "💳 𝙋𝘼𝙔𝙈𝙀𝙉𝙏 𝙎𝙀𝙏𝙏𝙄𝙉𝙂"
-	btnBackup   = "⬇️ 𝘽𝘼𝘾𝙆𝙐𝙋"
-	btnRestore  = "⬆️ 𝙍𝙀𝙎𝙏𝙊𝙍𝙀"
-	btnMode     = "🔐 𝙈𝙊𝘿𝙀"
-	btnSetSlug  = "🏷️ 𝙎𝙀𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍 𝙎𝙇𝙐𝙂"
-	btnSetKey   = "🔑 𝙎𝙀𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍 𝘼𝙋𝙄 𝙆𝙀𝙔"
-	btnSetPrice = "💰 𝙎𝙀𝙏 𝙃𝘼𝙍𝙂𝘼/𝙃𝘼𝙍𝙄"
-	btnSetGroup = "👥 𝙎𝙀𝙏 𝙄𝘿 𝙂𝙍𝙊𝙐𝙋" // ✅ NEW
-	btnTestPay  = "🧪 𝙏𝙀𝙎𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍"
+	btnUsers      = "👥 𝙐𝙎𝙀𝙍 𝙈𝘼𝙉𝘼𝙂𝙀𝙍"
+	btnPaySet     = "💳 𝙋𝘼𝙔𝙈𝙀𝙉𝙏 𝙎𝙀𝙏𝙏𝙄𝙉𝙂"
+	btnBackupVPN  = "⬇️ 𝘽𝘼𝘾𝙆𝙐𝙋 𝙑𝙋𝙉"
+	btnRestoreVPN = "⬆️ 𝙍𝙀𝙎𝙏𝙊𝙍𝙀 𝙑𝙋𝙉"
+	btnBackupBot  = "⬇️ 𝘽𝘼𝘾𝙆𝙐𝙋 𝘽𝙊𝙏"
+	btnRestoreBot = "⬆️ 𝙍𝙀𝙎𝙏𝙊𝙍𝙀 𝘽𝙊𝙏"
+	btnMode       = "🔐 𝙈𝙊𝘿𝙀"
+	btnSetSlug    = "🏷️ 𝙎𝙀𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍 𝙎𝙇𝙐𝙂"
+	btnSetKey     = "🔑 𝙎𝙀𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍 𝘼𝙋𝙄 𝙆𝙀𝙔"
+	btnSetPrice   = "💰 𝙎𝙀𝙏 𝙃𝘼𝙍𝙂𝘼/𝙃𝘼𝙍𝙄"
+	btnSetGroup   = "👥 𝙎𝙀𝙏 𝙄𝘿 𝙂𝙍𝙊𝙐𝙋" // ✅ NEW
+	btnTestPay    = "🧪 𝙏𝙀𝙎𝙏 𝙋𝘼𝙆𝘼𝙎𝙄𝙍"
 
 	btnCreateUser = "➕ 𝘾𝙍𝙀𝘼𝙏𝙀"
 	btnRenewUser  = "🔄 𝙍𝙀𝙉𝙀𝙒"
@@ -204,6 +206,7 @@ func quoteHTML(lines []string) string {
 	}
 	return "<blockquote>" + strings.Join(out, "\n") + "</blockquote>"
 }
+
 // ==========================================
 // Time helpers (WIB)
 // ==========================================
@@ -261,17 +264,17 @@ func genPassword(n int) string {
 }
 
 func genDigits(n int) string {
-    const digits = "0123456789"
-    var b strings.Builder
-    for i := 0; i < n; i++ {
-        idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
-        if err != nil {
-            b.WriteByte('0')
-            continue
-        }
-        b.WriteByte(digits[idx.Int64()])
-    }
-    return b.String()
+	const digits = "0123456789"
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
+		if err != nil {
+			b.WriteByte('0')
+			continue
+		}
+		b.WriteByte(digits[idx.Int64()])
+	}
+	return b.String()
 }
 
 func serverNameFromISP(isp string) string {
@@ -658,8 +661,12 @@ func handleMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotConfig) 
 		mutex.Lock()
 		state2 := userStates[userID]
 		mutex.Unlock()
-		if state2 == "waiting_restore_file" {
-			processRestoreFile(bot, msg, cfg)
+		if state2 == "waiting_restore_vpn_file" {
+			processVPNRestoreFile(bot, msg, cfg)
+			return
+		}
+		if state2 == "waiting_restore_bot_file" {
+			processBotRestoreFile(bot, msg, cfg)
 			return
 		}
 	}
@@ -718,7 +725,7 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, cfg *BotCon
 		sendPlain(bot, chatID, "🔐 Masukkan Password Baru:")
 
 	case data == "trial_confirm":
-        pw := "YinnTrialX" + genDigits(5)
+		pw := "YinnTrialX" + genDigits(5)
 
 		if userID != cfg.AdminID {
 			rem := trialRemaining(userID, cfg.AdminID)
@@ -743,13 +750,21 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, cfg *BotCon
 		if userID == cfg.AdminID {
 			showAdminPaymentMenu(bot, chatID, userID, cfg)
 		}
-	case data == "admin_backup":
+	case data == "admin_backup_vpn":
 		if userID == cfg.AdminID {
-			performBackup(bot, chatID)
+			performVPNBackup(bot, chatID)
 		}
-	case data == "admin_restore":
+	case data == "admin_restore_vpn":
 		if userID == cfg.AdminID {
-			startRestore(bot, chatID, userID)
+			startVPNRestore(bot, chatID, userID)
+		}
+	case data == "admin_backup_bot":
+		if userID == cfg.AdminID {
+			performBotBackup(bot, chatID)
+		}
+	case data == "admin_restore_bot":
+		if userID == cfg.AdminID {
+			startBotRestore(bot, chatID, userID)
 		}
 	case data == "admin_mode":
 		if userID == cfg.AdminID {
@@ -973,8 +988,10 @@ func handleState(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, state string, cfg 
 		sendPlain(bot, chatID, "✅ Notify Group ID tersimpan.")
 		showAdminPaymentMenu(bot, chatID, userID, cfg)
 
-	case "waiting_restore_file":
-		sendPlain(bot, chatID, "⬆️ Kirim file ZIP backup sekarang.")
+	case "waiting_restore_vpn_file":
+		sendPlain(bot, chatID, "⬆️ Kirim file ZIP backup VPN sekarang.")
+	case "waiting_restore_bot_file":
+		sendPlain(bot, chatID, "⬆️ Kirim file ZIP backup database bot sekarang.")
 	}
 }
 
@@ -1143,8 +1160,12 @@ func showAdminMenu(bot *tgbotapi.BotAPI, chatID, userID int64, cfg *BotConfig) {
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnPaySet, "admin_payment")),
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnBroadcast, "admin_broadcast")),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(btnBackup, "admin_backup"),
-			tgbotapi.NewInlineKeyboardButtonData(btnRestore, "admin_restore"),
+			tgbotapi.NewInlineKeyboardButtonData(btnBackupVPN, "admin_backup_vpn"),
+			tgbotapi.NewInlineKeyboardButtonData(btnRestoreVPN, "admin_restore_vpn"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(btnBackupBot, "admin_backup_bot"),
+			tgbotapi.NewInlineKeyboardButtonData(btnRestoreBot, "admin_restore_bot"),
 		),
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnMode, "admin_mode")),
 		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnBack, "back_main")),
@@ -1483,6 +1504,7 @@ func sendGroupNotify(bot *tgbotapi.BotAPI, cfg *BotConfig, isTrial bool, buyerID
 		log.Printf("[GROUP] sent OK (group_id=%d)", cfg.NotifyGroupID)
 	}
 }
+
 // ==========================================
 // API (User Ops)
 // ==========================================
@@ -1605,33 +1627,73 @@ func sendAccountInfo(bot *tgbotapi.BotAPI, chatID int64, userID int64, data map[
 	html += "📡 ISP      : " + codeHTML(ipInfo.Isp) + "\n"
 	html += "📅 Expired  : " + codeHTML(exp) + "\n"
 	if isTrial {
-		html += "⏳ Auto delete : " + codeHTML("100 menit") + "\n"
+		html += "⏳ Auto edit : " + codeHTML("100 menit") + "\n"
 	}
 	html += "━━━━━━━━━━━━━━━━━━━━━━\n"
+
 	msg := tgbotapi.NewMessage(chatID, html)
 	msg.ParseMode = "HTML"
 	msg.DisableWebPagePreview = true
-	sent, _ := bot.Send(msg)
+	sent, err := bot.Send(msg)
+	if err != nil {
+		return
+	}
 
 	if sent.MessageID != 0 {
 		resultMu.Lock()
 		resultMessageIDs[chatID] = sent.MessageID
 		resultMu.Unlock()
+		updateTrackedMessage(chatID, sent.MessageID)
 	}
 
-	go func() {
+	go func(mid int) {
 		time.Sleep(6 * time.Second)
-		// menu utama muncul (sendAndTrackHTML boleh delete lastMessage),
-		// tapi kalau ada kondisi result ke-track, deleteLastMessage akan skip.
+		resultMu.Lock()
+		delete(resultMessageIDs, chatID)
+		resultMu.Unlock()
+		updateTrackedMessage(chatID, mid)
 		showMainMenuSimple(bot, chatID, userID, cfg)
-	}()
+	}(sent.MessageID)
 }
+
 // ==========================================
 // Helpers (send / delete / cancel)
 // ==========================================
 
+func updateTrackedMessage(chatID int64, msgID int) {
+	if msgID == 0 {
+		return
+	}
+	lastMu.Lock()
+	lastMessageIDs[chatID] = msgID
+	lastMu.Unlock()
+}
+
+func getTrackedMessage(chatID int64) int {
+	lastMu.Lock()
+	defer lastMu.Unlock()
+	return lastMessageIDs[chatID]
+}
+
 func sendAndTrack(bot *tgbotapi.BotAPI, msg tgbotapi.MessageConfig) {
-	deleteLastMessage(bot, msg.ChatID)
+	msgID := getTrackedMessage(msg.ChatID)
+
+	if msgID != 0 {
+		edit := tgbotapi.NewEditMessageText(msg.ChatID, msgID, msg.Text)
+		emptyMarkup := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+		edit.ReplyMarkup = &emptyMarkup
+		if markup, ok := msg.ReplyMarkup.(tgbotapi.InlineKeyboardMarkup); ok {
+			edit.ReplyMarkup = &markup
+		}
+		if markup, ok := msg.ReplyMarkup.(*tgbotapi.InlineKeyboardMarkup); ok {
+			edit.ReplyMarkup = markup
+		}
+		_, err := bot.Send(edit)
+		if err == nil {
+			updateTrackedMessage(msg.ChatID, msgID)
+			return
+		}
+	}
 
 	sent, err := bot.Send(msg)
 	if err != nil {
@@ -1642,19 +1704,31 @@ func sendAndTrack(bot *tgbotapi.BotAPI, msg tgbotapi.MessageConfig) {
 			log.Printf("SEND FALLBACK ERROR chat=%d: %v", msg.ChatID, err2)
 			return
 		}
-		lastMu.Lock()
-		lastMessageIDs[msg.ChatID] = sent2.MessageID
-		lastMu.Unlock()
+		updateTrackedMessage(msg.ChatID, sent2.MessageID)
 		return
 	}
 
-	lastMu.Lock()
-	lastMessageIDs[msg.ChatID] = sent.MessageID
-	lastMu.Unlock()
+	updateTrackedMessage(msg.ChatID, sent.MessageID)
 }
 
 func sendAndTrackHTML(bot *tgbotapi.BotAPI, chatID int64, html string, kb *tgbotapi.InlineKeyboardMarkup) {
-	deleteLastMessage(bot, chatID)
+	msgID := getTrackedMessage(chatID)
+
+	if msgID != 0 {
+		edit := tgbotapi.NewEditMessageText(chatID, msgID, html)
+		edit.ParseMode = "HTML"
+		edit.DisableWebPagePreview = true
+		emptyMarkup := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+		edit.ReplyMarkup = &emptyMarkup
+		if kb != nil {
+			edit.ReplyMarkup = kb
+		}
+		_, err := bot.Send(edit)
+		if err == nil {
+			updateTrackedMessage(chatID, msgID)
+			return
+		}
+	}
 
 	msg := tgbotapi.NewMessage(chatID, html)
 	msg.ParseMode = "HTML"
@@ -1673,15 +1747,11 @@ func sendAndTrackHTML(bot *tgbotapi.BotAPI, chatID int64, html string, kb *tgbot
 			log.Printf("SEND HTML FALLBACK ERROR chat=%d: %v", chatID, err2)
 			return
 		}
-		lastMu.Lock()
-		lastMessageIDs[chatID] = sent2.MessageID
-		lastMu.Unlock()
+		updateTrackedMessage(chatID, sent2.MessageID)
 		return
 	}
 
-	lastMu.Lock()
-	lastMessageIDs[chatID] = sent.MessageID
-	lastMu.Unlock()
+	updateTrackedMessage(chatID, sent.MessageID)
 }
 
 func deleteLastMessage(bot *tgbotapi.BotAPI, chatID int64) {
@@ -1711,16 +1781,26 @@ func deleteLastMessage(bot *tgbotapi.BotAPI, chatID int64) {
 }
 
 func sendPlain(bot *tgbotapi.BotAPI, chatID int64, text string) {
-	deleteLastMessage(bot, chatID)
+	msgID := getTrackedMessage(chatID)
+
+	if msgID != 0 {
+		edit := tgbotapi.NewEditMessageText(chatID, msgID, text)
+		emptyMarkup := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}}
+		edit.ReplyMarkup = &emptyMarkup
+		_, err := bot.Send(edit)
+		if err == nil {
+			updateTrackedMessage(chatID, msgID)
+			return
+		}
+	}
+
 	msg := tgbotapi.NewMessage(chatID, text)
 	sent, err := bot.Send(msg)
 	if err != nil {
 		log.Printf("SEND PLAIN ERROR chat=%d: %v", chatID, err)
 		return
 	}
-	lastMu.Lock()
-	lastMessageIDs[chatID] = sent.MessageID
-	lastMu.Unlock()
+	updateTrackedMessage(chatID, sent.MessageID)
 }
 
 func cancelOperation(bot *tgbotapi.BotAPI, chatID, userID int64, cfg *BotConfig, from *tgbotapi.User) {
@@ -2110,6 +2190,7 @@ func confirmDeleteUser(bot *tgbotapi.BotAPI, chatID int64, data string) {
 	)
 	sendAndTrack(bot, msg)
 }
+
 // ==========================================
 // Pakasir
 // ==========================================
@@ -2189,22 +2270,19 @@ func testPakasir(bot *tgbotapi.BotAPI, chatID int64, cfg *BotConfig) {
 }
 
 // ==========================================
-// Backup / Restore (tetap sama)
+// Backup / Restore (VPN & BOT dipisah)
 // ==========================================
 
-func performBackup(bot *tgbotapi.BotAPI, chatID int64) {
-	sendPlain(bot, chatID, "⏳ Sedang membuat backup...")
+func performVPNBackup(bot *tgbotapi.BotAPI, chatID int64) {
+	sendPlain(bot, chatID, "⏳ Sedang membuat backup data VPN...")
 
 	files := []string{
 		"/etc/zivpn/config.json",
 		"/etc/zivpn/users.json",
 		"/etc/zivpn/domain",
-		"/etc/zivpn/bot-config.json",
 		"/etc/zivpn/apikey",
 		"/etc/zivpn/api_port",
 		"/etc/zivpn/port",
-		TrialStateFile,
-		BotStateFile,
 	}
 
 	buf := new(bytes.Buffer)
@@ -2218,44 +2296,49 @@ func performBackup(bot *tgbotapi.BotAPI, chatID int64) {
 		if err != nil {
 			continue
 		}
-		func() {
-			defer f.Close()
-			w, err := zipWriter.Create(filepath.Base(file))
+		func(src *os.File, fullPath string) {
+			defer src.Close()
+			w, err := zipWriter.Create(filepath.Base(fullPath))
 			if err != nil {
 				return
 			}
-			_, _ = io.Copy(w, f)
-		}()
+			_, _ = io.Copy(w, src)
+		}(f, file)
 	}
 	_ = zipWriter.Close()
 
-	fileName := fmt.Sprintf("zivpn-backup-%s.zip", time.Now().Format("20060102-150405"))
+	fileName := fmt.Sprintf("zivpn-vpn-backup-%s.zip", time.Now().Format("20060102-150405"))
 	tmpFile := "/tmp/" + fileName
 	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
-		sendPlain(bot, chatID, "❌ Gagal membuat file backup.")
+		sendPlain(bot, chatID, "❌ Gagal membuat file backup VPN.")
 		return
 	}
 	defer os.Remove(tmpFile)
 
 	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpFile))
-	doc.Caption = "✅ Backup Data ZiVPN"
+	doc.Caption = "✅ Backup Data VPN"
 	deleteLastMessage(bot, chatID)
 	_, _ = bot.Send(doc)
 }
 
-func startRestore(bot *tgbotapi.BotAPI, chatID int64, userID int64) {
+func startVPNRestore(bot *tgbotapi.BotAPI, chatID int64, userID int64) {
 	mutex.Lock()
-	userStates[userID] = "waiting_restore_file"
+	userStates[userID] = "waiting_restore_vpn_file"
 	mutex.Unlock()
-	sendPlain(bot, chatID, "⬆️ Restore Data\n\nSilakan kirim file ZIP backup.\n⚠️ Data saat ini akan ditimpa.")
+	sendPlain(bot, chatID, "⬆️ Restore Data VPN\n\nSilakan kirim file ZIP backup data VPN.\n⚠️ Data VPN saat ini akan ditimpa.")
 }
 
-func processRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotConfig) {
+func processVPNRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotConfig) {
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 
 	resetAllState(userID)
-	sendPlain(bot, chatID, "⏳ Memproses file...")
+	sendPlain(bot, chatID, "⏳ Memproses restore data VPN...")
+
+	if msg.Document == nil {
+		sendPlain(bot, chatID, "❌ File tidak ditemukan.")
+		return
+	}
 
 	fileID := msg.Document.FileID
 	f, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
@@ -2264,8 +2347,8 @@ func processRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotCon
 		return
 	}
 
-	fileUrl := f.Link(cfg.BotToken)
-	resp, err := http.Get(fileUrl)
+	fileURL := f.Link(cfg.BotToken)
+	resp, err := http.Get(fileURL)
 	if err != nil {
 		sendPlain(bot, chatID, "❌ Gagal download content.")
 		return
@@ -2285,15 +2368,12 @@ func processRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotCon
 	}
 
 	validFiles := map[string]bool{
-		"config.json":      true,
-		"users.json":       true,
-		"bot-config.json":  true,
-		"domain":           true,
-		"apikey":           true,
-		"api_port":         true,
-		"port":             true,
-		"trial-state.json": true,
-		"bot-state.json":   true,
+		"config.json": true,
+		"users.json":  true,
+		"domain":      true,
+		"apikey":      true,
+		"api_port":    true,
+		"port":        true,
 	}
 
 	for _, zf := range zipReader.File {
@@ -2318,13 +2398,143 @@ func processRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotCon
 	_ = exec.Command("systemctl", "restart", "zivpn").Run()
 	_ = exec.Command("systemctl", "restart", "zivpn-api").Run()
 
-	_, _ = bot.Send(tgbotapi.NewMessage(chatID, "✅ Restore Berhasil! Service direstart."))
+	_, _ = bot.Send(tgbotapi.NewMessage(chatID, "✅ Restore data VPN berhasil! Service direstart."))
 	go func() {
 		time.Sleep(2 * time.Second)
 		_ = exec.Command("systemctl", "restart", "zivpn-bot").Run()
 	}()
 
 	showMainMenu(bot, chatID, userID, msg.From, cfg)
+}
+
+func performBotBackup(bot *tgbotapi.BotAPI, chatID int64) {
+	sendPlain(bot, chatID, "⏳ Sedang membuat backup database bot...")
+
+	files := []string{
+		BotConfigFile,
+		TrialStateFile,
+		BotStateFile,
+	}
+
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	for _, file := range files {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			continue
+		}
+		f, err := os.Open(file)
+		if err != nil {
+			continue
+		}
+		func(src *os.File, fullPath string) {
+			defer src.Close()
+			w, err := zipWriter.Create(filepath.Base(fullPath))
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(w, src)
+		}(f, file)
+	}
+	_ = zipWriter.Close()
+
+	fileName := fmt.Sprintf("zivpn-bot-backup-%s.zip", time.Now().Format("20060102-150405"))
+	tmpFile := "/tmp/" + fileName
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		sendPlain(bot, chatID, "❌ Gagal membuat file backup database bot.")
+		return
+	}
+	defer os.Remove(tmpFile)
+
+	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpFile))
+	doc.Caption = "✅ Backup Database Bot"
+	deleteLastMessage(bot, chatID)
+	_, _ = bot.Send(doc)
+}
+
+func startBotRestore(bot *tgbotapi.BotAPI, chatID int64, userID int64) {
+	mutex.Lock()
+	userStates[userID] = "waiting_restore_bot_file"
+	mutex.Unlock()
+	sendPlain(bot, chatID, "⬆️ Restore Database Bot\n\nSilakan kirim file ZIP backup database bot.\n⚠️ Data bot saat ini akan ditimpa.")
+}
+
+func processBotRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *BotConfig) {
+	chatID := msg.Chat.ID
+	userID := msg.From.ID
+
+	resetAllState(userID)
+	sendPlain(bot, chatID, "⏳ Memproses restore database bot...")
+
+	if msg.Document == nil {
+		sendPlain(bot, chatID, "❌ File tidak ditemukan.")
+		return
+	}
+
+	fileID := msg.Document.FileID
+	f, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+	if err != nil {
+		sendPlain(bot, chatID, "❌ Gagal mengunduh file.")
+		return
+	}
+
+	fileURL := f.Link(cfg.BotToken)
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		sendPlain(bot, chatID, "❌ Gagal download content.")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		sendPlain(bot, chatID, "❌ Gagal membaca file.")
+		return
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		sendPlain(bot, chatID, "❌ File bukan ZIP valid.")
+		return
+	}
+
+	validFiles := map[string]string{
+		"bot-config.json":  BotConfigFile,
+		"trial-state.json": TrialStateFile,
+		"bot-state.json":   BotStateFile,
+	}
+
+	restored := 0
+	for _, zf := range zipReader.File {
+		dstPath, ok := validFiles[zf.Name]
+		if !ok {
+			continue
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			continue
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			continue
+		}
+		restored++
+	}
+
+	if restored == 0 {
+		sendPlain(bot, chatID, "❌ Tidak ada file database bot yang valid di dalam ZIP.")
+		return
+	}
+
+	_, _ = bot.Send(tgbotapi.NewMessage(chatID, "✅ Restore database bot berhasil! Bot akan direstart."))
+	go func() {
+		time.Sleep(2 * time.Second)
+		_ = exec.Command("systemctl", "restart", "zivpn-bot").Run()
+	}()
 }
 
 // ==========================================
@@ -2379,6 +2589,7 @@ func toggleMode(bot *tgbotapi.BotAPI, chatID int64, userID int64, cfg *BotConfig
 	sendPlain(bot, chatID, "✅ Mode diubah menjadi: "+cfg.Mode)
 	showAdminMenu(bot, chatID, userID, cfg)
 }
+
 // ==========================================
 // Blocked marker (helper) - MISSING FUNCS PATCH
 // ==========================================
