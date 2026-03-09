@@ -109,8 +109,9 @@ fi
 # BASE DEPENDENCIES
 # =========================
 run_silent "Updating system" "apt-get update -y"
-run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables zip unzip"
+run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables zip unzip cron"
 run_silent "Setting Timezone" "timedatectl set-timezone Asia/Jakarta || true"
+run_silent "Enabling cron service" "systemctl enable --now cron || true"
 
 if ! command -v go &>/dev/null; then
   run_silent "Installing Golang" "apt-get install -y golang git"
@@ -349,8 +350,14 @@ fi
 # CRON AUTO-EXPIRE (SAFE)
 # =========================
 print_task "Configuring Cron Auto-Expire"
+if ! command -v crontab >/dev/null 2>&1; then
+  print_fail "Configuring Cron Auto-Expire"
+fi
+
+run_silent "Ensuring cron is running" "systemctl enable --now cron || true"
+
 cron_cmd='0 0 * * * /usr/bin/curl -s -X POST -H "X-API-Key: $(cat /etc/zivpn/apikey)" http://127.0.0.1:$(cat /etc/zivpn/api_port)/api/cron/expire >> /var/log/zivpn-cron.log 2>&1'
-(crontab -l 2>/dev/null | grep -v "/api/cron/expire" || true; echo "$cron_cmd") | crontab -
+(crontab -l 2>/dev/null | grep -v "/api/cron/expire" || true; echo "$cron_cmd") | crontab - &>>"$LOG_FILE" || print_fail "Configuring Cron Auto-Expire"
 print_done "Configuring Cron Auto-Expire"
 
 # =========================
