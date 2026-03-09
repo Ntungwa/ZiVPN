@@ -4,6 +4,9 @@ set -u
 API_KEY_FILE="/etc/zivpn/apikey"
 API_PORT_FILE="/etc/zivpn/api_port"
 DOMAIN_FILE="/etc/zivpn/domain"
+TG_NOTIFY_FILE="/etc/zivpn/telegram_notify.conf"
+WATCH_PID_FILE="/etc/zivpn/.tg_notify_watch.pid"
+WATCH_SNAPSHOT_FILE="/etc/zivpn/.tg_notify_users.snapshot"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -23,12 +26,72 @@ DOMAIN="-"
 TOTAL_USERS="0"
 ACTIVE_USERS="0"
 EXPIRED_USERS="0"
+TG_BOT_TOKEN=""
+TG_CHAT_ID=""
 
 need_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     echo -e "${RED}Run as root!${NC}"
     exit 1
   fi
+}
+
+load_notify_config() {
+  TG_BOT_TOKEN=""
+  TG_CHAT_ID=""
+
+  if [[ -f "$TG_NOTIFY_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$TG_NOTIFY_FILE" 2>/dev/null || true
+  fi
+}
+
+save_notify_config() {
+  mkdir -p /etc/zivpn
+  cat >"$TG_NOTIFY_FILE" <<EOF
+TG_BOT_TOKEN='${TG_BOT_TOKEN}'
+TG_CHAT_ID='${TG_CHAT_ID}'
+EOF
+  chmod 600 "$TG_NOTIFY_FILE" 2>/dev/null || true
+}
+
+notify_enabled() {
+  [[ -n "${TG_BOT_TOKEN:-}" && -n "${TG_CHAT_ID:-}" ]]
+}
+
+tg_html_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  echo "$s"
+}
+
+tg_send_message() {
+  local text="$1"
+  notify_enabled || return 0
+
+  nohup curl -m 20 -fsS --retry 2 --retry-delay 1 \
+    -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TG_CHAT_ID}" \
+    --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "text=${text}" \
+    >/dev/null 2>&1 &
+}
+
+tg_send_document() {
+  local filepath="$1"
+  local caption="$2"
+  notify_enabled || return 0
+  [[ -f "$filepath" ]] || return 0
+
+  nohup curl -m 180 -fsS --retry 2 --retry-delay 1 \
+    -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" \
+    --form-string "chat_id=${TG_CHAT_ID}" \
+    --form-string "parse_mode=HTML" \
+    --form-string "caption=${caption}" \
+    -F "document=@${filepath}" \
+    >/dev/null 2>&1 &
 }
 
 load_env() {
@@ -43,6 +106,7 @@ load_env() {
   fi
 
   BASE_URL="http://127.0.0.1:${API_PORT}"
+  load_notify_config
 }
 
 pause() {
@@ -100,6 +164,16 @@ mask_api_key() {
   echo "${k:0:4}******${k: -4}"
 }
 
+mask_token() {
+  local k="$1"
+  local len=${#k}
+  if (( len <= 10 )); then
+    echo "$k"
+    return
+  fi
+  echo "${k:0:6}******${k: -4}"
+}
+
 get_os_name() {
   grep -w PRETTY_NAME /etc/os-release 2>/dev/null | head -n1 | sed 's/PRETTY_NAME=//;s/"//g'
 }
@@ -112,26 +186,18 @@ get_uptime_info() {
   uptime -p 2>/dev/null | sed 's/^up //'
 }
 
-count_users() {
-  local body users active expired
-  body="$(api_get "/api/users")"
-
-  users="$(echo "$body" | grep -o '"password"' 2>/dev/null | wc -l | tr -d ' ')"
-  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' 2>/dev/null | wc -l | tr -d ' ')"
-  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' 2>/dev/null | wc -l | tr -d ' ')"
-
-  TOTAL_USERS="${users:-0}"
-  ACTIVE_USERS="${active:-0}"
-  EXPIRED_USERS="${expired:-0}"
-}
-
 repeat_char() {
   local char="$1"
   local count="$2"
-  printf "%*s" "$count" "" | tr ' ' "$char"
+  local out=""
+  local i
+  for ((i=0; i<count; i++)); do
+    out+="$char"
+  done
+  printf "%s" "$out"
 }
 
-fit_result_text() {
+fit_text() {
   local width="$1"
   shift
   local text="$*"
@@ -168,7 +234,10 @@ show_account_result_box() {
   local password="$3"
   local expired="$4"
   local api_info public_ip private_ip ip isp exp_fmt
-  local RESULT_W=72
+  local lines=()
+  local max=0
+  local border_len
+  local line
 
   api_info="$(api_get "/api/info")"
   public_ip="$(echo "$api_info" | json_value "public_ip")"
@@ -179,15 +248,138 @@ show_account_result_box() {
   isp="$(get_isp_info "$ip")"
   exp_fmt="$(format_expiry_human "$expired")"
 
+  lines=(
+    "Host    : ${host}"
+    "IP      : ${ip}"
+    "ISP     : ${isp}"
+    "Pass    : ${password}"
+    "Expired : ${exp_fmt}"
+  )
+
+  for line in "${lines[@]}"; do
+    (( ${#line} > max )) && max=${#line}
+  done
+
+  border_len=$((max + 2))
+
   echo ""
   echo -e "${BOLD}${WHITE}${title}${NC}"
-  echo -e "┌$(repeat_char "─" "$RESULT_W")┐"
-  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Host   : ${host} (domain)")"
-  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "IP     : ${ip} (ip vps)")"
-  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "ISP    : ${isp} (nama isp)")"
-  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Pass   : ${password} (password)")"
-  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Expire : ${exp_fmt} (exp)")"
-  echo -e "└$(repeat_char "─" "$RESULT_W")┘"
+  printf "┌%s┐\n" "$(repeat_char "─" "$border_len")"
+  for line in "${lines[@]}"; do
+    printf "│ %s\n" "$line"
+  done
+  printf "└%s┘\n" "$(repeat_char "─" "$border_len")"
+}
+
+send_account_notification() {
+  local title="$1"
+  local host="$2"
+  local password="$3"
+  local expired="$4"
+  local api_info public_ip private_ip ip isp exp_fmt notif
+
+  api_info="$(api_get "/api/info")"
+  public_ip="$(echo "$api_info" | json_value "public_ip")"
+  private_ip="$(echo "$api_info" | json_value "private_ip")"
+  ip="${public_ip:-$private_ip}"
+  [[ -z "${ip:-}" ]] && ip="-"
+
+  isp="$(get_isp_info "$ip")"
+  exp_fmt="$(format_expiry_human "$expired")"
+
+  notif="<b>$(tg_html_escape "$title")</b>
+Host    : <code>$(tg_html_escape "$host")</code>
+IP      : <code>$(tg_html_escape "$ip")</code>
+ISP     : <code>$(tg_html_escape "$isp")</code>
+Pass    : <code>$(tg_html_escape "$password")</code>
+Expired : <code>$(tg_html_escape "$exp_fmt")</code>"
+
+  tg_send_message "$notif"
+}
+
+get_current_users_list() {
+  local body
+  body="$(api_get "/api/users")"
+  echo "$body" | tr '{' '\n' | grep '"password"' | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p' | sort -u
+}
+
+notify_deleted_accounts_once() {
+  local old_file new_file user
+  old_file="$(mktemp)"
+  new_file="$(mktemp)"
+
+  [[ -f "$WATCH_SNAPSHOT_FILE" ]] && cp -f "$WATCH_SNAPSHOT_FILE" "$old_file" || true
+  get_current_users_list > "$new_file"
+
+  if [[ -s "$old_file" ]]; then
+    while IFS= read -r user; do
+      [[ -z "${user:-}" ]] && continue
+      if ! grep -Fxq "$user" "$new_file"; then
+        tg_send_message "<b>AKUN ZIVPN DIHAPUS</b>
+User    : <code>$(tg_html_escape "$user")</code>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+      fi
+    done < "$old_file"
+  fi
+
+  cp -f "$new_file" "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
+  rm -f "$old_file" "$new_file"
+}
+
+watch_deleted_accounts_loop() {
+  load_env
+  mkdir -p /etc/zivpn
+  echo "$$" > "$WATCH_PID_FILE"
+
+  if [[ ! -f "$WATCH_SNAPSHOT_FILE" ]]; then
+    get_current_users_list > "$WATCH_SNAPSHOT_FILE"
+  fi
+
+  while true; do
+    load_env
+    if ! notify_enabled; then
+      rm -f "$WATCH_PID_FILE"
+      exit 0
+    fi
+    notify_deleted_accounts_once
+    sleep 20
+  done
+}
+
+ensure_delete_watcher() {
+  if notify_enabled; then
+    if [[ -f "$WATCH_PID_FILE" ]]; then
+      local pid
+      pid="$(cat "$WATCH_PID_FILE" 2>/dev/null || true)"
+      if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
+        return 0
+      fi
+    fi
+
+    nohup /usr/local/bin/menu-zivpn --watch-delete >/dev/null 2>&1 &
+    echo $! > "$WATCH_PID_FILE"
+  else
+    if [[ -f "$WATCH_PID_FILE" ]]; then
+      local pid
+      pid="$(cat "$WATCH_PID_FILE" 2>/dev/null || true)"
+      [[ -n "${pid:-}" ]] && kill "$pid" 2>/dev/null || true
+      rm -f "$WATCH_PID_FILE"
+    fi
+  fi
+}
+
+count_users() {
+  local body users active expired
+  body="$(api_get "/api/users")"
+
+  users="$(echo "$body" | grep -o '"password"' 2>/dev/null | wc -l | tr -d ' ')"
+  active="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"active"' 2>/dev/null | wc -l | tr -d ' ')"
+  expired="$(echo "$body" | grep -oi '"status"[[:space:]]*:[[:space:]]*"expired"' 2>/dev/null | wc -l | tr -d ' ')"
+
+  TOTAL_USERS="${users:-0}"
+  ACTIVE_USERS="${active:-0}"
+  EXPIRED_USERS="${expired:-0}"
 }
 
 print_top_banner() {
@@ -219,7 +411,7 @@ print_server_box() {
   printf " ${CYAN}│${NC} ${WHITE}• UPTIME${NC}    = %s\n" "${uptime_info:--}"
   printf " ${CYAN}│${NC} ${WHITE}• CORE${NC}      = %b\n" "$(status_color "$core")"
   printf " ${CYAN}│${NC} ${WHITE}• API STATUS${NC}= %b\n" "$(status_color "$api")"
-  printf " ${CYAN}│${NC} ${WHITE}• BOT STATUS${NC}= %b\n" "$(status_color "$bot")"
+#  printf " ${CYAN}│${NC} ${WHITE}• BOT STATUS${NC}= %b\n" "$(status_color "$bot")"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
@@ -240,7 +432,8 @@ print_menu_box() {
   printf " ${CYAN}│${NC} ${GREEN}[02]${NC} %-20s ${GREEN}[07]${NC} %-13s      ${CYAN}│${NC}\n" "CREATE TRIAL" "BACKUP/RESTORE"
   printf " ${CYAN}│${NC} ${GREEN}[03]${NC} %-20s ${GREEN}[08]${NC} %-13s       ${CYAN}│${NC}\n" "RENEW ACCOUNT" "VIEW API KEY"
   printf " ${CYAN}│${NC} ${GREEN}[04]${NC} %-20s ${GREEN}[09]${NC} %-13s     ${CYAN}│${NC}\n" "DELETE ACCOUNT" "RESTART SERVICE"
-  printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "EXIT"
+  printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${GREEN}[10]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "TG NOTIF"
+  printf " ${CYAN}│${NC} ${GREEN}[11]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "DEL ALL EXP" "EXIT"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
@@ -295,6 +488,7 @@ create_account() {
 
   if echo "$body" | json_success; then
     show_account_result_box "CREATE AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
+    send_account_notification "CREATE AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
   fi
 
   pause
@@ -321,6 +515,7 @@ create_trial() {
 
   if echo "$body" | json_success; then
     show_account_result_box "TRIAL AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
+    send_account_notification "TRIAL AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
   fi
 
   pause
@@ -342,6 +537,7 @@ renew_account() {
   expired="$(echo "$body" | json_value "expired")"
   if echo "$body" | json_success; then
     printf "${WHITE}Expired baru ${NC}: %s\n" "${expired:--}"
+    send_account_notification "RENEW AKUN ZIVPN PREMIUM" "${DOMAIN}" "${username}" "${expired:--}"
   fi
 
   pause
@@ -385,6 +581,82 @@ delete_account() {
 
   body="$(api_post "/api/user/delete" "{\"password\":\"${username}\"}")"
   print_result "$body"
+
+  if echo "$body" | json_success; then
+    tg_send_message "<b>AKUN ZIVPN DIHAPUS</b>
+User    : <code>$(tg_html_escape "$username")</code>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+    get_current_users_list > "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
+  fi
+
+  pause
+}
+
+delete_all_expired() {
+  local body deleted failed username status status_lc
+  deleted=0
+  failed=0
+
+  sub_header "DELETE ALL EXPIRED ACCOUNT"
+
+  body="$(api_get "/api/users")"
+  if ! echo "$body" | json_success; then
+    print_result "$body"
+    pause
+    return
+  fi
+
+  mapfile -t expired_list < <(
+    echo "$body" | tr '{' '\n' | grep '"password"' | while read -r row; do
+      username="$(echo "$row" | sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p')"
+      status="$(echo "$row" | sed -n 's/.*"status":[[:space:]]*"\([^"]*\)".*/\1/p')"
+      status_lc="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+
+      if [[ -n "$username" && "$status_lc" == "expired" ]]; then
+        echo "$username"
+      fi
+    done
+  )
+
+  if [[ "${#expired_list[@]}" -eq 0 ]]; then
+    echo -e "${YELLOW}Tidak ada akun expired${NC}"
+    pause
+    return
+  fi
+
+  echo -e "${WHITE}Akun expired ditemukan:${NC} ${#expired_list[@]}"
+  for i in "${!expired_list[@]}"; do
+    printf "${GREEN}[%02d]${NC} %s\n" "$((i+1))" "${expired_list[$i]}"
+  done
+  echo ""
+
+  read -rp "Yakin hapus semua akun expired? (y/N) : " confirm
+  [[ "${confirm,,}" == "y" ]] || {
+    echo -e "${YELLOW}Dibatalkan${NC}"
+    pause
+    return
+  }
+
+  for username in "${expired_list[@]}"; do
+    body="$(api_post "/api/user/delete" "{\"password\":\"${username}\"}")"
+    if echo "$body" | json_success; then
+      ((deleted++))
+      tg_send_message "<b>AKUN ZIVPN DIHAPUS</b>
+User    : <code>$(tg_html_escape "$username")</code>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+    else
+      ((failed++))
+    fi
+  done
+
+  get_current_users_list > "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
+
+  echo ""
+  echo -e "${GREEN}Berhasil dihapus : ${deleted}${NC}"
+  echo -e "${YELLOW}Gagal dihapus    : ${failed}${NC}"
+
   pause
 }
 
@@ -477,15 +749,12 @@ backup_vpn() {
   fi
 
   tmpdir="$(mktemp -d)"
-  mkdir -p "${tmpdir}/etc-zivpn" "${tmpdir}/systemd" "${tmpdir}/bin"
+  mkdir -p "${tmpdir}/etc-zivpn" "${tmpdir}/systemd"
 
   cp -a /etc/zivpn/. "${tmpdir}/etc-zivpn/" 2>/dev/null || true
   [[ -f /etc/systemd/system/zivpn.service ]] && cp -f /etc/systemd/system/zivpn.service "${tmpdir}/systemd/" || true
   [[ -f /etc/systemd/system/zivpn-api.service ]] && cp -f /etc/systemd/system/zivpn-api.service "${tmpdir}/systemd/" || true
   [[ -f /etc/systemd/system/zivpn-bot.service ]] && cp -f /etc/systemd/system/zivpn-bot.service "${tmpdir}/systemd/" || true
-  [[ -f /usr/local/bin/zivpn ]] && cp -f /usr/local/bin/zivpn "${tmpdir}/bin/" || true
-  [[ -f /usr/local/bin/menu ]] && cp -f /usr/local/bin/menu "${tmpdir}/bin/" || true
-  [[ -f /usr/local/bin/menu-zivpn ]] && cp -f /usr/local/bin/menu-zivpn "${tmpdir}/bin/" || true
 
   (
     cd "$tmpdir"
@@ -496,6 +765,16 @@ backup_vpn() {
 
   echo -e "${GREEN}✔ Backup data ZiVPN berhasil dibuat${NC}"
   echo -e "${CYAN}${backup_file}${NC}"
+
+  tg_send_message "<b>Backup Data ZiVPN</b>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Path    : <code>$(tg_html_escape "$backup_file")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+  tg_send_document "$backup_file" "<b>File Backup Data ZiVPN</b>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Path    : <code>$(tg_html_escape "$backup_file")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+
   pause
 }
 
@@ -516,9 +795,7 @@ restore_vpn() {
 
   [[ -d "${tmpdir}/etc-zivpn" ]] && mkdir -p /etc/zivpn && cp -a "${tmpdir}/etc-zivpn/." /etc/zivpn/
   [[ -d "${tmpdir}/systemd" ]] && cp -f "${tmpdir}/systemd/"* /etc/systemd/system/ 2>/dev/null || true
-  [[ -d "${tmpdir}/bin" ]] && cp -f "${tmpdir}/bin/"* /usr/local/bin/ 2>/dev/null || true
 
-  chmod +x /usr/local/bin/zivpn /usr/local/bin/menu /usr/local/bin/menu-zivpn 2>/dev/null || true
   systemctl daemon-reload
   systemctl restart zivpn.service 2>/dev/null || true
   systemctl restart zivpn-api.service 2>/dev/null || true
@@ -527,6 +804,14 @@ restore_vpn() {
   rm -rf "$tmpdir"
 
   echo -e "${GREEN}✔ Restore data ZiVPN selesai${NC}"
+
+  tg_send_message "<b>RESTORE DATA ZIVPN BERHASIL</b>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Path    : <code>$(tg_html_escape "$zipfile")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+
+  get_current_users_list > "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
+
   pause
 }
 
@@ -565,7 +850,60 @@ view_api_key() {
   pause
 }
 
+telegram_notif_menu() {
+  while true; do
+    sub_header "TELEGRAM NOTIFICATION"
+
+    echo -e "${WHITE}Status      ${NC}: $(notify_enabled && echo ENABLED || echo DISABLED)"
+    echo -e "${WHITE}Bot Token   ${NC}: ${TG_BOT_TOKEN:+$(mask_token "$TG_BOT_TOKEN")}"
+    echo -e "${WHITE}Chat ID     ${NC}: ${TG_CHAT_ID:--}"
+    echo ""
+    echo -e "${GREEN}[01]${NC} Set Bot Token"
+    echo -e "${GREEN}[02]${NC} Set Chat ID"
+    echo -e "${GREEN}[03]${NC} Test Notification"
+    echo -e "${GREEN}[04]${NC} Disable Notification"
+    echo -e "${RED}[00]${NC} Kembali"
+    echo ""
+
+    read -rp "Select options 》 " tgopt
+    case "${tgopt:-}" in
+      1|01)
+        read -rp "Masukkan Bot Token : " TG_BOT_TOKEN
+        save_notify_config
+        ensure_delete_watcher
+        echo -e "${GREEN}✔ Bot token disimpan${NC}"
+        pause
+        ;;
+      2|02)
+        read -rp "Masukkan Chat ID   : " TG_CHAT_ID
+        save_notify_config
+        ensure_delete_watcher
+        echo -e "${GREEN}✔ Chat ID disimpan${NC}"
+        pause
+        ;;
+      3|03)
+        tg_send_message "<b>TEST NOTIF ZIVPN BERHASIL</b>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+        echo -e "${GREEN}✔ Test notif dikirim${NC}"
+        pause
+        ;;
+      4|04)
+        TG_BOT_TOKEN=""
+        TG_CHAT_ID=""
+        save_notify_config
+        ensure_delete_watcher
+        echo -e "${YELLOW}✔ Notifikasi dinonaktifkan${NC}"
+        pause
+        ;;
+      0|00) return ;;
+      *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
+    esac
+  done
+}
+
 main_menu() {
+  ensure_delete_watcher
   while true; do
     header
     echo -ne "${GREEN}Selected Menu ⟩ ${NC}"
@@ -582,11 +920,19 @@ main_menu() {
       7|07) backup_restore_menu ;;
       8|08) view_api_key ;;
       9|09) restart_services ;;
+      10) telegram_notif_menu ;;
+      11) delete_all_expired ;;
       0|00) clear; exit 0 ;;
       *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
     esac
   done
 }
+
+if [[ "${1:-}" == "--watch-delete" ]]; then
+  load_env
+  watch_deleted_accounts_loop
+  exit 0
+fi
 
 need_root
 load_env
