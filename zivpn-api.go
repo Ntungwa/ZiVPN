@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -37,7 +36,8 @@ type Config struct {
 
 type UserRequest struct {
 	Password string `json:"password"`
-	Days     int    `json:"days"`
+	Days     int    `json:"days,omitempty"`
+	Minutes  int    `json:"minutes,omitempty"`
 }
 
 type UserStore struct {
@@ -47,8 +47,8 @@ type UserStore struct {
 }
 
 type Response struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
@@ -58,7 +58,7 @@ func main() {
 	port := flag.Int("port", 8080, "Port to run the API server on")
 	flag.Parse()
 
-	if keyBytes, err := ioutil.ReadFile(ApiKeyFile); err == nil {
+	if keyBytes, err := os.ReadFile(ApiKeyFile); err == nil {
 		AuthToken = strings.TrimSpace(string(keyBytes))
 	}
 
@@ -87,7 +87,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func jsonResponse(w http.ResponseWriter, status int, success bool, message string, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(Response{
+	_ = json.NewEncoder(w).Encode(Response{
 		Success: success,
 		Message: message,
 		Data:    data,
@@ -106,8 +106,13 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Password == "" || req.Days <= 0 {
-		jsonResponse(w, http.StatusBadRequest, false, "Password dan days harus valid", nil)
+	if req.Password == "" {
+		jsonResponse(w, http.StatusBadRequest, false, "Password harus valid", nil)
+		return
+	}
+
+	if req.Days <= 0 && req.Minutes <= 0 {
+		jsonResponse(w, http.StatusBadRequest, false, "Days atau minutes harus valid", nil)
 		return
 	}
 
@@ -133,7 +138,16 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expDate := time.Now().Add(time.Duration(req.Days) * 24 * time.Hour).Format("2006-01-02")
+	var expiredAt time.Time
+	var expiredDisplay string
+
+	if req.Minutes > 0 {
+		expiredAt = time.Now().Add(time.Duration(req.Minutes) * time.Minute)
+		expiredDisplay = formatExpiry(expiredAt, true)
+	} else {
+		expiredAt = time.Now().Add(time.Duration(req.Days) * 24 * time.Hour)
+		expiredDisplay = formatExpiry(expiredAt, false)
+	}
 
 	users, err := loadUsers()
 	if err != nil {
@@ -143,7 +157,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
 	newUser := UserStore{
 		Password: req.Password,
-		Expired:  expDate,
+		Expired:  expiredDisplay,
 		Status:   "active",
 	}
 	users = append(users, newUser)
@@ -159,15 +173,24 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domain := "Tidak diatur"
-	if domainBytes, err := ioutil.ReadFile(DomainFile); err == nil {
+	if domainBytes, err := os.ReadFile(DomainFile); err == nil {
 		domain = strings.TrimSpace(string(domainBytes))
 	}
 
-	jsonResponse(w, http.StatusOK, true, "User berhasil dibuat", map[string]string{
+	resp := map[string]string{
 		"password": req.Password,
-		"expired":  expDate,
+		"expired":  expiredDisplay,
 		"domain":   domain,
-	})
+	}
+	if req.Minutes > 0 {
+		resp["duration_type"] = "minutes"
+		resp["minutes"] = fmt.Sprintf("%d", req.Minutes)
+	} else {
+		resp["duration_type"] = "days"
+		resp["days"] = fmt.Sprintf("%d", req.Days)
+	}
+
+	jsonResponse(w, http.StatusOK, true, "User berhasil dibuat", resp)
 }
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +282,11 @@ func renewUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Password == "" || req.Days <= 0 {
+		jsonResponse(w, http.StatusBadRequest, false, "Password dan days harus valid", nil)
+		return
+	}
+
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -275,20 +303,21 @@ func renewUser(w http.ResponseWriter, r *http.Request) {
 	for _, u := range users {
 		if u.Password == req.Password {
 			found = true
-			currentExp, err := time.Parse("2006-01-02", u.Expired)
+
+			currentExp, hadTime, err := parseExpiry(u.Expired)
 			if err != nil {
 				currentExp = time.Now()
+				hadTime = false
 			}
-			
+
 			if currentExp.Before(time.Now()) {
 				currentExp = time.Now()
 			}
 
 			newExp := currentExp.Add(time.Duration(req.Days) * 24 * time.Hour)
-			newExpDate = newExp.Format("2006-01-02")
-			
+			newExpDate = formatExpiry(newExp, hadTime)
+
 			u.Expired = newExpDate
-			
 			if u.Status == "locked" {
 				u.Status = "active"
 				go enableUser(req.Password)
@@ -340,16 +369,16 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userList := []UserInfo{}
-	today := time.Now().Format("2006-01-02")
+	now := time.Now()
 
 	for _, u := range users {
 		status := "Active"
 		if u.Status == "locked" {
 			status = "Locked"
-		} else if u.Expired < today {
+		} else if exp, _, err := parseExpiry(u.Expired); err == nil && exp.Before(now) {
 			status = "Expired"
 		}
-		
+
 		userList = append(userList, UserInfo{
 			Password: u.Password,
 			Expired:  u.Expired,
@@ -368,14 +397,20 @@ func getSystemInfo(w http.ResponseWriter, r *http.Request) {
 	ipPriv, _ := cmd.Output()
 
 	domain := "Tidak diatur"
-	if domainBytes, err := ioutil.ReadFile(DomainFile); err == nil {
+	if domainBytes, err := os.ReadFile(DomainFile); err == nil {
 		domain = strings.TrimSpace(string(domainBytes))
+	}
+
+	privateIP := ""
+	fields := strings.Fields(string(ipPriv))
+	if len(fields) > 0 {
+		privateIP = fields[0]
 	}
 
 	info := map[string]string{
 		"domain":     domain,
 		"public_ip":  strings.TrimSpace(string(ipPub)),
-		"private_ip": strings.Fields(string(ipPriv))[0],
+		"private_ip": privateIP,
 		"port":       "5667",
 		"service":    "zivpn",
 	}
@@ -395,9 +430,6 @@ func checkExpiration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	today := time.Now().Format("2006-01-02")
-	
-	// Load config to check who is currently active
 	config, err := loadConfig()
 	if err != nil {
 		jsonResponse(w, http.StatusInternalServerError, false, "Gagal membaca config", nil)
@@ -409,10 +441,16 @@ func checkExpiration(w http.ResponseWriter, r *http.Request) {
 		activeUsers[p] = true
 	}
 
+	now := time.Now()
 	revokedCount := 0
+
 	for _, u := range users {
-		if u.Expired < today && activeUsers[u.Password] {
-			log.Printf("User %s expired (Exp: %s). Revoking access.\n", u.Password, u.Expired)
+		exp, _, err := parseExpiry(u.Expired)
+		if err != nil {
+			continue
+		}
+		if exp.Before(now) && activeUsers[u.Password] {
+			log.Printf("User %s expired (Exp: %s). Revoking access.", u.Password, u.Expired)
 			revokeAccess(u.Password)
 			revokedCount++
 		}
@@ -429,6 +467,7 @@ func revokeAccess(password string) {
 	if err == nil {
 		newConfigAuth := []string{}
 		changed := false
+
 		for _, p := range config.Auth.Config {
 			if p == password {
 				changed = true
@@ -436,10 +475,11 @@ func revokeAccess(password string) {
 				newConfigAuth = append(newConfigAuth, p)
 			}
 		}
+
 		if changed {
 			config.Auth.Config = newConfigAuth
-			saveConfig(config)
-			restartService()
+			_ = saveConfig(config)
+			_ = restartService()
 		}
 	}
 }
@@ -463,15 +503,14 @@ func enableUser(password string) {
 
 	if !exists {
 		config.Auth.Config = append(config.Auth.Config, password)
-		saveConfig(config)
-		restartService()
+		_ = saveConfig(config)
+		_ = restartService()
 	}
 }
 
-
 func loadConfig() (Config, error) {
 	var config Config
-	file, err := ioutil.ReadFile(ConfigFile)
+	file, err := os.ReadFile(ConfigFile)
 	if err != nil {
 		return config, err
 	}
@@ -480,16 +519,16 @@ func loadConfig() (Config, error) {
 }
 
 func saveConfig(config Config) error {
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(config, "", " ")
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(ConfigFile, data, 0644)
+	return os.WriteFile(ConfigFile, data, 0644)
 }
 
 func loadUsers() ([]UserStore, error) {
 	var users []UserStore
-	file, err := ioutil.ReadFile(UserDB)
+	file, err := os.ReadFile(UserDB)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return users, nil
@@ -501,14 +540,41 @@ func loadUsers() ([]UserStore, error) {
 }
 
 func saveUsers(users []UserStore) error {
-	data, err := json.MarshalIndent(users, "", "  ")
+	data, err := json.MarshalIndent(users, "", " ")
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(UserDB, data, 0644)
+	return os.WriteFile(UserDB, data, 0644)
 }
 
 func restartService() error {
 	cmd := exec.Command("systemctl", "restart", "zivpn.service")
 	return cmd.Run()
+}
+
+func parseExpiry(exp string) (time.Time, bool, error) {
+	exp = strings.TrimSpace(exp)
+	layouts := []string{
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, exp, time.Local); err == nil {
+			return t, true, nil
+		}
+	}
+
+	if t, err := time.ParseInLocation("2006-01-02", exp, time.Local); err == nil {
+		return t.Add(23*time.Hour + 59*time.Minute + 59*time.Second), false, nil
+	}
+
+	return time.Time{}, false, fmt.Errorf("invalid expiry format: %s", exp)
+}
+
+func formatExpiry(t time.Time, includeTime bool) string {
+	if includeTime {
+		return t.Format("2006-01-02 15:04:05")
+	}
+	return t.Format("2006-01-02")
 }
