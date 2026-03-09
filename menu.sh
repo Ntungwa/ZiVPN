@@ -234,10 +234,7 @@ show_account_result_box() {
   local password="$3"
   local expired="$4"
   local api_info public_ip private_ip ip isp exp_fmt
-  local lines=()
-  local max=0
-  local border_len
-  local line
+  local border_len=25
 
   api_info="$(api_get "/api/info")"
   public_ip="$(echo "$api_info" | json_value "public_ip")"
@@ -248,26 +245,14 @@ show_account_result_box() {
   isp="$(get_isp_info "$ip")"
   exp_fmt="$(format_expiry_human "$expired")"
 
-  lines=(
-    "Host    : ${host}"
-    "IP      : ${ip}"
-    "ISP     : ${isp}"
-    "Pass    : ${password}"
-    "Expired : ${exp_fmt}"
-  )
-
-  for line in "${lines[@]}"; do
-    (( ${#line} > max )) && max=${#line}
-  done
-
-  border_len=$((max + 2))
-
   echo ""
   echo -e "${BOLD}${WHITE}${title}${NC}"
   printf "┌%s┐\n" "$(repeat_char "─" "$border_len")"
-  for line in "${lines[@]}"; do
-    printf "│ %s\n" "$line"
-  done
+  printf "│ Host    : %s\n" "$host"
+  printf "│ IP      : %s\n" "$ip"
+  printf "│ ISP     : %s\n" "$isp"
+  printf "│ Pass    : %s\n" "$password"
+  printf "│ Expired : %s\n" "$exp_fmt"
   printf "└%s┘\n" "$(repeat_char "─" "$border_len")"
 }
 
