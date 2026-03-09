@@ -120,7 +120,7 @@ else
 fi
 
 # =========================
-# INPUT DOMAIN + API KEY
+# INPUT DOMAIN ONLY
 # =========================
 echo ""
 echo -ne "${BOLD}Domain Configuration${RESET}\n"
@@ -130,13 +130,8 @@ while true; do
 done
 echo ""
 
-echo -ne "${BOLD}API Key Configuration${RESET}\n"
-generated_key="$(openssl rand -hex 16)"
-echo -e "Generated Key: ${CYAN}$generated_key${RESET}"
-read -rp "Enter API Key (Press Enter to use generated): " input_key
-api_key="${input_key:-$generated_key}"
-echo -e "Using Key: ${GREEN}$api_key${RESET}"
-echo ""
+# API key otomatis
+api_key="$(openssl rand -hex 16)"
 
 # =========================
 # INSTALL CORE + CONFIG
@@ -190,7 +185,7 @@ print_done "Configuring welcome text"
 run_silent "Generating SSL" "openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj '/C=ID/ST=Jawa Barat/L=Bandung/O=YINNSTORE/OU=IT Department/CN=$domain' -keyout /etc/zivpn/zivpn.key -out /etc/zivpn/zivpn.crt"
 
 # =========================
-# API PORT (FREE)
+# API PORT
 # =========================
 print_task "Finding available API Port"
 API_PORT=8080
@@ -201,7 +196,7 @@ echo "$API_PORT" > /etc/zivpn/api_port
 print_done "API Port selected: ${CYAN}$API_PORT${RESET}"
 
 # =========================
-# SYSCTL (NO DUPLICATE)
+# SYSCTL
 # =========================
 print_task "Applying sysctl tunings"
 cat >/etc/sysctl.d/99-zivpn.conf <<'EOF'
@@ -252,7 +247,7 @@ WantedBy=multi-user.target
 EOF
 
 # =========================
-# DOWNLOAD + BUILD API (ANTI-CACHE)
+# DOWNLOAD + BUILD API
 # =========================
 print_task "Downloading API sources (anti-cache)"
 raw_wget "${REPO_RAW}/zivpn-api.go" "/etc/zivpn/api/zivpn-api.go" || print_fail "Downloading zivpn-api.go"
@@ -287,67 +282,14 @@ WantedBy=multi-user.target
 EOF
 
 # =========================
-# BOT SETUP (PAID ONLY)
-# =========================
-echo ""
-echo -ne "${BOLD}Telegram Bot Configuration${RESET}\n"
-echo -ne "${GRAY}(Leave empty to skip)${RESET}\n"
-read -rp "Bot Token: " bot_token
-read -rp "Admin ID : " admin_id
-
-if [[ -n "${bot_token:-}" && -n "${admin_id:-}" ]]; then
-  cat >/etc/zivpn/bot-config.json <<EOF
-{"bot_token":"$bot_token","admin_id":$admin_id,"mode":"public","domain":"$domain","pakasir_slug":"","pakasir_api_key":"","daily_price":0}
-EOF
-
-  bot_file="zivpn-paid-bot.go"
-
-  print_task "Downloading Bot source (anti-cache)"
-  raw_wget "${REPO_RAW}/${bot_file}" "/etc/zivpn/api/${bot_file}" || print_fail "Downloading bot source"
-  sed -i 's/\r$//' "/etc/zivpn/api/${bot_file}" &>>"$LOG_FILE" || true
-  print_done "Downloading Bot source (anti-cache)"
-
-  print_task "Compiling Bot"
-  cd /etc/zivpn/api
-  rm -f /etc/zivpn/api/zivpn-bot &>>"$LOG_FILE" || true
-  go mod tidy &>>"$LOG_FILE" || true
-  go get github.com/go-telegram-bot-api/telegram-bot-api/v5 &>>"$LOG_FILE" || true
-  go build -o zivpn-bot "${bot_file}" &>>"$LOG_FILE" || print_fail "Compiling Bot"
-  print_done "Compiling Bot"
-
-  cat >/etc/systemd/system/zivpn-bot.service <<EOF
-[Unit]
-Description=ZiVPN Telegram Bot Paid (YinnStore)
-After=network.target zivpn-api.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/etc/zivpn/api
-ExecStart=/etc/zivpn/api/zivpn-bot
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-else
-  print_done "Skipping Bot Setup"
-fi
-
-# =========================
 # ENABLE + START SERVICES
 # =========================
 run_silent "Reloading systemd" "systemctl daemon-reload"
 run_silent "Starting core" "systemctl enable --now zivpn.service"
 run_silent "Starting API" "systemctl enable --now zivpn-api.service"
 
-if [[ -f /etc/systemd/system/zivpn-bot.service ]]; then
-  run_silent "Starting Bot" "systemctl enable --now zivpn-bot.service"
-fi
-
 # =========================
-# CRON AUTO-EXPIRE (SAFE)
+# CRON AUTO-EXPIRE
 # =========================
 print_task "Configuring Cron Auto-Expire"
 if ! command -v crontab >/dev/null 2>&1; then
@@ -361,7 +303,7 @@ cron_cmd='0 0 * * * /usr/bin/curl -s -X POST -H "X-API-Key: $(cat /etc/zivpn/api
 print_done "Configuring Cron Auto-Expire"
 
 # =========================
-# FIREWALL + NAT (SAFE)
+# FIREWALL + NAT
 # =========================
 iface="$(ip -4 route ls 2>/dev/null | awk '/default/ {print $5; exit}')"
 iface="${iface:-eth0}"
@@ -381,8 +323,9 @@ echo ""
 echo -e "${BOLD}Installation Complete${RESET}"
 echo -e "Domain  : ${CYAN}$domain${RESET}"
 echo -e "API     : ${CYAN}$API_PORT${RESET}"
-echo -e "Token   : ${CYAN}$api_key${RESET}"
+echo -e "API Key : ${CYAN}$api_key${RESET}"
 echo -e "Menu    : ${CYAN}menu-zivpn / menu${RESET}"
+echo -e "Bot     : ${CYAN}not installed${RESET}"
 echo -e "Login   : ${CYAN}normal, tidak auto buka menu${RESET}"
 echo -e "Dev     : ${CYAN}https://t.me/yinnprovpn${RESET}"
 echo ""
