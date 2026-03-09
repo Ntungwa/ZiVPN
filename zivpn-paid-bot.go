@@ -36,8 +36,8 @@ const (
 	PortFile      = "/etc/zivpn/port"
 
 	TrialStateFile     = "/etc/zivpn/trial-state.json"
-	TrialMaxPerDay     = 2
-	TrialDuration      = 100 * time.Minute
+	TrialMaxPerDay     = 3
+	TrialDuration      = 60 * time.Minute
 	TrialCleanerPeriod = 1 * time.Minute
 
 	BotStateFile = "/etc/zivpn/bot-state.json"
@@ -110,10 +110,23 @@ type TrialUserState struct {
 }
 
 // bot state persistence (join users + stats)
+type TransactionRecord struct {
+	OrderID   string `json:"order_id"`
+	UserID    int64  `json:"user_id"`
+	Name      string `json:"name"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	Days      int    `json:"days"`
+	Amount    int    `json:"amount"`
+	Status    string `json:"status"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type BotState struct {
 	Users          map[string]*BotUser `json:"users"`
 	TotalAccounts  int                 `json:"total_accounts"`
 	AccountCreated []int64             `json:"account_created"` // unix timestamps
+	Transactions   []TransactionRecord `json:"transactions"`
 }
 type BotUser struct {
 	ID        int64  `json:"id"`
@@ -130,12 +143,13 @@ type BotUser struct {
 // ==========================================
 
 const (
-	btnBuy    = "🛒 𝘽𝙀𝙇𝙄 𝘼𝙆𝙐𝙉 𝙕𝙄𝙑𝙋𝙉"
-	btnTrial  = "🌐 𝙏𝙍𝙄𝘼𝙇 𝘼𝙆𝙐𝙉 𝙕𝙄𝙑𝙋𝙉"
-	btnInfo   = "📊 𝙎𝙔𝙎𝙏𝙀𝙈 𝙄𝙉𝙁𝙊"
-	btnAdmin  = "🛠️ 𝘼𝘿𝙈𝙄𝙉 𝙋𝘼𝙉𝙀𝙇"
-	btnBack   = "⬅️ 𝙆𝙀𝙈𝘽𝘼𝙇𝙄"
-	btnCancel = "❌ 𝘽𝘼𝙏𝘼𝙇"
+	btnBuy     = "🛒 𝘽𝙀𝙇𝙄 𝘼𝙆𝙐𝙉 𝙕𝙄𝙑𝙋𝙉"
+	btnTrial   = "🌐 𝙏𝙍𝙄𝘼𝙇 𝘼𝙆𝙐𝙉 𝙕𝙄𝙑𝙋𝙉"
+	btnInfo    = "📊 𝙎𝙔𝙎𝙏𝙀𝙈 𝙄𝙉𝙁𝙊"
+	btnHistory = "🧾 𝙍𝙄𝙒𝘼𝙔𝘼𝙏 𝙏𝙍𝘼𝙉𝙎𝘼𝙆𝙎𝙄"
+	btnAdmin   = "🛠️ 𝘼𝘿𝙈𝙄𝙉 𝙋𝘼𝙉𝙀𝙇"
+	btnBack    = "⬅️ 𝙆𝙀𝙈𝘽𝘼𝙇𝙄"
+	btnCancel  = "❌ 𝘽𝘼𝙏𝘼𝙇"
 
 	btnBuyConfirm   = "✅ 𝙆𝙊𝙉𝙁𝙄𝙍𝙈𝘼𝙎𝙄 𝙊𝙍𝘿𝙀𝙍"
 	btnTrialConfirm = "✅ 𝘾𝙊𝘽𝘼 𝙏𝙍𝙄𝘼𝙇"
@@ -331,6 +345,7 @@ func loadBotState() BotState {
 		Users:          map[string]*BotUser{},
 		TotalAccounts:  0,
 		AccountCreated: []int64{},
+		Transactions:   []TransactionRecord{},
 	}
 	b, err := os.ReadFile(BotStateFile)
 	if err != nil {
@@ -342,6 +357,9 @@ func loadBotState() BotState {
 	}
 	if st.AccountCreated == nil {
 		st.AccountCreated = []int64{}
+	}
+	if st.Transactions == nil {
+		st.Transactions = []TransactionRecord{}
 	}
 	return st
 }
@@ -410,6 +428,40 @@ func markAccountCreated() {
 	if len(st.AccountCreated) > 20000 {
 		st.AccountCreated = st.AccountCreated[len(st.AccountCreated)-20000:]
 	}
+	saveBotState(st)
+}
+
+func recordTransaction(userID int64, orderID, password string, days, amount int, status string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	st := loadBotState()
+	name := "User"
+	username := ""
+	key := strconv.FormatInt(userID, 10)
+	if st.Users != nil && st.Users[key] != nil {
+		if strings.TrimSpace(st.Users[key].Name) != "" {
+			name = st.Users[key].Name
+		}
+		username = st.Users[key].Username
+	}
+
+	st.Transactions = append(st.Transactions, TransactionRecord{
+		OrderID:   orderID,
+		UserID:    userID,
+		Name:      name,
+		Username:  username,
+		Password:  password,
+		Days:      days,
+		Amount:    amount,
+		Status:    status,
+		CreatedAt: time.Now().Unix(),
+	})
+
+	if len(st.Transactions) > 5000 {
+		st.Transactions = st.Transactions[len(st.Transactions)-5000:]
+	}
+
 	saveBotState(st)
 }
 
@@ -617,6 +669,7 @@ func main() {
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	go startPaymentChecker(bot, &cfg)
+	go startDailyAutoBackup(bot, &cfg)
 	startTrialCleaner()
 
 	u := tgbotapi.NewUpdate(0)
@@ -708,6 +761,8 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, cfg *BotCon
 		showPriceList(bot, chatID, userID, cfg, true)
 	case data == "menu_info":
 		systemInfo(bot, chatID, userID, cfg)
+	case data == "menu_history":
+		showTransactionHistory(bot, chatID, userID, q.From, cfg)
 	case data == "menu_admin":
 		if userID == cfg.AdminID {
 			showAdminMenu(bot, chatID, userID, cfg)
@@ -730,7 +785,7 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, cfg *BotCon
 		if userID != cfg.AdminID {
 			rem := trialRemaining(userID, cfg.AdminID)
 			if rem <= 0 {
-				sendPlain(bot, chatID, "❌ Trial hari ini sudah habis. (Max 2x / hari)")
+				sendPlain(bot, chatID, "❌ Trial hari ini sudah habis. (Max 3x / hari)")
 				break
 			}
 			ok, reason := reserveTrial(userID, pw)
@@ -1063,6 +1118,7 @@ func showMainMenu(bot *tgbotapi.BotAPI, chatID, userID int64, from *tgbotapi.Use
 			tgbotapi.NewInlineKeyboardButtonData(btnTrial, "menu_trial"),
 		},
 		{tgbotapi.NewInlineKeyboardButtonData(btnInfo, "menu_info")},
+		{tgbotapi.NewInlineKeyboardButtonData(btnHistory, "menu_history")},
 	}
 	if userID == cfg.AdminID {
 		kb = append(kb, []tgbotapi.InlineKeyboardButton{
@@ -1084,6 +1140,49 @@ func showMainMenuSimple(bot *tgbotapi.BotAPI, chatID, userID int64, cfg *BotConf
 	showMainMenu(bot, chatID, userID, dummy, cfg)
 }
 
+func showTransactionHistory(bot *tgbotapi.BotAPI, chatID, userID int64, from *tgbotapi.User, cfg *BotConfig) {
+	mutex.Lock()
+	st := loadBotState()
+	items := make([]TransactionRecord, 0)
+	for i := len(st.Transactions) - 1; i >= 0; i-- {
+		if st.Transactions[i].UserID == userID {
+			items = append(items, st.Transactions[i])
+		}
+		if len(items) >= 15 {
+			break
+		}
+	}
+	mutex.Unlock()
+
+	html := ""
+	html += "🧾 <b>Riwayat Transaksi</b>\n"
+	html += "━━━━━━━━━━━━━━━━━━━━━━\n"
+
+	if len(items) == 0 {
+		html += "Belum ada riwayat order yang tersimpan."
+	} else {
+		for i, tx := range items {
+			tm := time.Unix(tx.CreatedAt, 0).In(wibLoc()).Format("02-01-2006 15:04")
+			amt := "Rp 0"
+			if tx.Amount > 0 {
+				amt = "Rp " + moneyIDR(tx.Amount)
+			}
+			html += fmt.Sprintf("<b>%d.</b> %s\n", i+1, codeHTML(tx.OrderID))
+			html += "🔐 Password : " + codeHTML(tx.Password) + "\n"
+			html += "📅 Durasi   : " + codeHTML(fmt.Sprintf("%d hari", tx.Days)) + "\n"
+			html += "💰 Harga    : " + codeHTML(amt) + "\n"
+			html += "📌 Status   : " + codeHTML(tx.Status) + "\n"
+			html += "🕒 Tanggal  : " + codeHTML(tm) + "\n"
+			html += "━━━━━━━━━━━━━━━━━━━━━━\n"
+		}
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(btnBack, "back_main")),
+	)
+	sendAndTrackHTML(bot, chatID, html, &markup)
+}
+
 func showPriceList(bot *tgbotapi.BotAPI, chatID, userID int64, cfg *BotConfig, isTrial bool) {
 	ipInfo, _ := getIpInfo()
 	serverName := serverNameFromISP(ipInfo.Isp)
@@ -1103,7 +1202,7 @@ func showPriceList(bot *tgbotapi.BotAPI, chatID, userID int64, cfg *BotConfig, i
 		html += "<b>🎁 Informasi Trial Akun ZIVPN</b>\n"
 		html += "━━━━━━━━━━━━━━━━━━━━━━\n"
 		html += "📁 Nama Server : " + codeHTML(serverName) + "\n"
-		html += "🕒 Durasi      : " + codeHTML("100 menit") + "\n"
+		html += "🕒 Durasi      : " + codeHTML("60 menit") + "\n"
 		html += "📱 Limit IP    : " + codeHTML(fmt.Sprintf("%d", limitIPDefault)) + "\n"
 		html += "📌 Sisa Trial  : " + codeHTML(remText) + "\n"
 		html += "──────────────────────\n"
@@ -1510,11 +1609,17 @@ func sendGroupNotify(bot *tgbotapi.BotAPI, cfg *BotConfig, isTrial bool, buyerID
 // ==========================================
 
 func createUser(bot *tgbotapi.BotAPI, chatID int64, userID int64, password string, days int, cfg *BotConfig, returnTo string, isTrial bool) {
-	res, err := apiCall("POST", "/user/create", map[string]interface{}{
+	payload := map[string]interface{}{
 		"password": password,
-		"days":     days,
 		"ip_limit": limitIPDefault,
-	})
+	}
+	if isTrial {
+		payload["minutes"] = int(TrialDuration / time.Minute)
+	} else {
+		payload["days"] = days
+	}
+
+	res, err := apiCall("POST", "/user/create", payload)
 	if err != nil {
 		sendPlain(bot, chatID, "❌ Error API: "+err.Error())
 		return
@@ -1627,7 +1732,7 @@ func sendAccountInfo(bot *tgbotapi.BotAPI, chatID int64, userID int64, data map[
 	html += "📡 ISP      : " + codeHTML(ipInfo.Isp) + "\n"
 	html += "📅 Expired  : " + codeHTML(exp) + "\n"
 	if isTrial {
-		html += "⏳ Auto edit : " + codeHTML("100 menit") + "\n"
+		html += "⏳ Auto edit : " + codeHTML("60 menit") + "\n"
 	}
 	html += "━━━━━━━━━━━━━━━━━━━━━━\n"
 
@@ -2273,9 +2378,7 @@ func testPakasir(bot *tgbotapi.BotAPI, chatID int64, cfg *BotConfig) {
 // Backup / Restore (VPN & BOT dipisah)
 // ==========================================
 
-func performVPNBackup(bot *tgbotapi.BotAPI, chatID int64) {
-	sendPlain(bot, chatID, "⏳ Sedang membuat backup data VPN...")
-
+func buildVPNBackupZip() (string, error) {
 	files := []string{
 		"/etc/zivpn/config.json",
 		"/etc/zivpn/users.json",
@@ -2310,6 +2413,82 @@ func performVPNBackup(bot *tgbotapi.BotAPI, chatID int64) {
 	fileName := fmt.Sprintf("zivpn-vpn-backup-%s.zip", time.Now().Format("20060102-150405"))
 	tmpFile := "/tmp/" + fileName
 	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+	return tmpFile, nil
+}
+
+func buildBotBackupZip() (string, error) {
+	files := []string{
+		BotConfigFile,
+		TrialStateFile,
+		BotStateFile,
+	}
+
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	for _, file := range files {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			continue
+		}
+		f, err := os.Open(file)
+		if err != nil {
+			continue
+		}
+		func(src *os.File, fullPath string) {
+			defer src.Close()
+			w, err := zipWriter.Create(filepath.Base(fullPath))
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(w, src)
+		}(f, file)
+	}
+	_ = zipWriter.Close()
+
+	fileName := fmt.Sprintf("zivpn-bot-backup-%s.zip", time.Now().Format("20060102-150405"))
+	tmpFile := "/tmp/" + fileName
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+	return tmpFile, nil
+}
+
+func sendDailyAutoBackup(bot *tgbotapi.BotAPI, cfg *BotConfig) {
+	if cfg.AdminID == 0 {
+		return
+	}
+
+	if vpnFile, err := buildVPNBackupZip(); err == nil {
+		defer os.Remove(vpnFile)
+		doc := tgbotapi.NewDocument(cfg.AdminID, tgbotapi.FilePath(vpnFile))
+		doc.Caption = "✅ Auto Backup Harian VPN"
+		_, _ = bot.Send(doc)
+	}
+
+	if botFile, err := buildBotBackupZip(); err == nil {
+		defer os.Remove(botFile)
+		doc := tgbotapi.NewDocument(cfg.AdminID, tgbotapi.FilePath(botFile))
+		doc.Caption = "✅ Auto Backup Harian BOT"
+		_, _ = bot.Send(doc)
+	}
+}
+
+func startDailyAutoBackup(bot *tgbotapi.BotAPI, cfg *BotConfig) {
+	for {
+		now := time.Now().In(wibLoc())
+		next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, wibLoc())
+		time.Sleep(time.Until(next))
+		sendDailyAutoBackup(bot, cfg)
+	}
+}
+
+func performVPNBackup(bot *tgbotapi.BotAPI, chatID int64) {
+	sendPlain(bot, chatID, "⏳ Sedang membuat backup data VPN...")
+
+	tmpFile, err := buildVPNBackupZip()
+	if err != nil {
 		sendPlain(bot, chatID, "❌ Gagal membuat file backup VPN.")
 		return
 	}
@@ -2410,37 +2589,8 @@ func processVPNRestoreFile(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, cfg *Bot
 func performBotBackup(bot *tgbotapi.BotAPI, chatID int64) {
 	sendPlain(bot, chatID, "⏳ Sedang membuat backup database bot...")
 
-	files := []string{
-		BotConfigFile,
-		TrialStateFile,
-		BotStateFile,
-	}
-
-	buf := new(bytes.Buffer)
-	zipWriter := zip.NewWriter(buf)
-
-	for _, file := range files {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			continue
-		}
-		f, err := os.Open(file)
-		if err != nil {
-			continue
-		}
-		func(src *os.File, fullPath string) {
-			defer src.Close()
-			w, err := zipWriter.Create(filepath.Base(fullPath))
-			if err != nil {
-				return
-			}
-			_, _ = io.Copy(w, src)
-		}(f, file)
-	}
-	_ = zipWriter.Close()
-
-	fileName := fmt.Sprintf("zivpn-bot-backup-%s.zip", time.Now().Format("20060102-150405"))
-	tmpFile := "/tmp/" + fileName
-	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+	tmpFile, err := buildBotBackupZip()
+	if err != nil {
 		sendPlain(bot, chatID, "❌ Gagal membuat file backup database bot.")
 		return
 	}
