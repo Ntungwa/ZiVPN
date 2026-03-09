@@ -9,7 +9,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[1;34m'
-CYAN='\033[1;36m'
+CYAN='\033[1;32m'
 MAGENTA='\033[1;35m'
 BOLD='\033[1m'
 GRAY='\033[1;30m'
@@ -23,12 +23,6 @@ DOMAIN="-"
 TOTAL_USERS="0"
 ACTIVE_USERS="0"
 EXPIRED_USERS="0"
-
-CURRENT_PUBLIC_IP="-"
-CURRENT_PRIVATE_IP="-"
-CURRENT_SERVICE="-"
-
-CONTENT_W=52
 
 need_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -87,6 +81,15 @@ service_state() {
   systemctl is-active "$svc" 2>/dev/null || echo "inactive"
 }
 
+status_color() {
+  local st="$1"
+  case "$st" in
+    active) printf "%b" "${GREEN}${st}${NC}" ;;
+    inactive|failed) printf "%b" "${RED}${st}${NC}" ;;
+    *) printf "%b" "${YELLOW}${st}${NC}" ;;
+  esac
+}
+
 mask_api_key() {
   local k="$1"
   local len=${#k}
@@ -109,37 +112,6 @@ get_uptime_info() {
   uptime -p 2>/dev/null | sed 's/^up //'
 }
 
-get_server_info() {
-  local api_info
-  api_info="$(api_get "/api/info")"
-  CURRENT_PUBLIC_IP="$(echo "$api_info" | json_value "public_ip")"
-  CURRENT_PRIVATE_IP="$(echo "$api_info" | json_value "private_ip")"
-  CURRENT_SERVICE="$(echo "$api_info" | json_value "service")"
-
-  [[ -z "${CURRENT_PUBLIC_IP:-}" ]] && CURRENT_PUBLIC_IP="-"
-  [[ -z "${CURRENT_PRIVATE_IP:-}" ]] && CURRENT_PRIVATE_IP="-"
-  [[ -z "${CURRENT_SERVICE:-}" ]] && CURRENT_SERVICE="-"
-}
-
-get_isp_info() {
-  local ip="$1"
-  local isp="-"
-
-  [[ -z "${ip:-}" || "$ip" == "-" ]] && { echo "-"; return; }
-
-  isp="$(curl -m 6 -fsSL "https://ipinfo.io/${ip}/org" 2>/dev/null | tr -d '\r' || true)"
-  [[ -z "${isp:-}" ]] && isp="-"
-
-  echo "$isp"
-}
-
-format_expiry_human() {
-  local exp="$1"
-  local f=""
-  f="$(LC_TIME=C date -d "$exp" '+%d %B %Y %H:%M' 2>/dev/null || true)"
-  [[ -n "$f" ]] && echo "$f" || echo "$exp"
-}
-
 count_users() {
   local body users active expired
   body="$(api_get "/api/users")"
@@ -159,13 +131,11 @@ repeat_char() {
   printf "%*s" "$count" "" | tr ' ' "$char"
 }
 
-fit_text() {
+fit_result_text() {
   local width="$1"
   shift
   local text="$*"
   text="${text//$'\n'/ }"
-  text="$(echo -n "$text" | tr -s ' ')"
-
   if (( ${#text} > width )); then
     printf "%s" "${text:0:width}"
   else
@@ -173,52 +143,65 @@ fit_text() {
   fi
 }
 
-center_text() {
-  local width="$1"
-  shift
-  local text="$*"
-  local len=${#text}
-  local left=0
-  local right=0
-
-  if (( len >= width )); then
-    printf "%s" "${text:0:width}"
-    return
-  fi
-
-  left=$(( (width - len) / 2 ))
-  right=$(( width - len - left ))
-  printf "%*s%s%*s" "$left" "" "$text" "$right" ""
+format_expiry_human() {
+  local exp="$1"
+  local f=""
+  f="$(LC_TIME=C date -d "$exp" '+%d %B %Y %H:%M' 2>/dev/null || true)"
+  [[ -n "$f" ]] && echo "$f" || echo "$exp"
 }
 
-box_top() {
-  echo -e "${CYAN}┌$(repeat_char "─" $((CONTENT_W + 2)))┐${NC}"
+get_isp_info() {
+  local ip="$1"
+  local isp="-"
+
+  [[ -z "${ip:-}" || "$ip" == "-" ]] && { echo "-"; return; }
+
+  isp="$(curl -m 6 -fsSL "https://ipinfo.io/${ip}/org" 2>/dev/null | tr -d '\r' || true)"
+  [[ -z "${isp:-}" ]] && isp="-"
+
+  echo "$isp"
 }
 
-box_mid() {
-  echo -e "${CYAN}├$(repeat_char "─" $((CONTENT_W + 2)))┤${NC}"
-}
+show_account_result_box() {
+  local title="$1"
+  local host="$2"
+  local password="$3"
+  local expired="$4"
+  local api_info public_ip private_ip ip isp exp_fmt
+  local RESULT_W=72
 
-box_bottom() {
-  echo -e "${CYAN}└$(repeat_char "─" $((CONTENT_W + 2)))┘${NC}"
-}
+  api_info="$(api_get "/api/info")"
+  public_ip="$(echo "$api_info" | json_value "public_ip")"
+  private_ip="$(echo "$api_info" | json_value "private_ip")"
+  ip="${public_ip:-$private_ip}"
+  [[ -z "${ip:-}" ]] && ip="-"
 
-box_row() {
-  local text="$1"
-  printf "${CYAN}│${NC} %s ${CYAN}│${NC}\n" "$(fit_text "$CONTENT_W" "$text")"
+  isp="$(get_isp_info "$ip")"
+  exp_fmt="$(format_expiry_human "$expired")"
+
+  echo ""
+  echo -e "${BOLD}${WHITE}${title}${NC}"
+  echo -e "┌$(repeat_char "─" "$RESULT_W")┐"
+  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Host   : ${host} (domain)")"
+  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "IP     : ${ip} (ip vps)")"
+  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "ISP    : ${isp} (nama isp)")"
+  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Pass   : ${password} (password)")"
+  printf "│ %s │\n" "$(fit_result_text $((RESULT_W - 2)) "Expire : ${exp_fmt} (exp)")"
+  echo -e "└$(repeat_char "─" "$RESULT_W")┘"
 }
 
 print_top_banner() {
-  box_top
-  box_row "$(center_text "$CONTENT_W" "SCRIPT PREMIUM YINNSTORE ZIVPN")"
-  box_bottom
+  echo -e "${CYAN}╭────────────────────────────────────────────────────╮${NC}"
+  echo -e "${CYAN}│${NC}${RED}           SCRIPT PREMIUM YINNSTORE ZIVPN           ${NC}${CYAN}│${NC}"
+  echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
 
 print_server_box() {
-  local core api bot os_name ram_info uptime_info
-  get_server_info
-
+  local api_info public_ip private_ip core api bot os_name ram_info uptime_info
+  api_info="$(api_get "/api/info")"
+  public_ip="$(echo "$api_info" | json_value "public_ip")"
+  private_ip="$(echo "$api_info" | json_value "private_ip")"
   os_name="$(get_os_name)"
   ram_info="$(get_ram_info)"
   uptime_info="$(get_uptime_info)"
@@ -226,51 +209,39 @@ print_server_box() {
   api="$(service_state zivpn-api.service)"
   bot="$(service_state zivpn-bot.service)"
 
-  box_top
-  box_row "$(center_text "$CONTENT_W" "SERVER INFORMATION")"
-  box_mid
-  box_row "DOMAIN      = ${DOMAIN}"
-  box_row "API         = 127.0.0.1:${API_PORT}"
-  box_row "PUBLIC IP   = ${CURRENT_PUBLIC_IP}"
-  box_row "PRIVATE IP  = ${CURRENT_PRIVATE_IP}"
-  box_row "OS          = ${os_name}"
-  box_row "RAM         = ${ram_info}"
-  box_row "UPTIME      = ${uptime_info}"
-  box_row "CORE        = ${core}"
-  box_row "API STATUS  = ${api}"
-  box_row "BOT STATUS  = ${bot}"
-  box_bottom
+  echo -e " ${CYAN}╭────────────────────────────────────────────────────╮${NC}"
+  printf " ${CYAN}│${NC} ${WHITE}• DOMAIN${NC}    = %s\n" "${DOMAIN}"
+  printf " ${CYAN}│${NC} ${WHITE}• API${NC}       = %s\n" "127.0.0.1:${API_PORT}"
+  printf " ${CYAN}│${NC} ${WHITE}• PUBLIC IP${NC} = %s\n" "${public_ip:--}"
+  printf " ${CYAN}│${NC} ${WHITE}• PRIVATE IP${NC}= %s\n" "${private_ip:--}"
+  printf " ${CYAN}│${NC} ${WHITE}• OS${NC}        = %s\n" "${os_name:--}"
+  printf " ${CYAN}│${NC} ${WHITE}• RAM${NC}       = %s\n" "${ram_info:--}"
+  printf " ${CYAN}│${NC} ${WHITE}• UPTIME${NC}    = %s\n" "${uptime_info:--}"
+  printf " ${CYAN}│${NC} ${WHITE}• CORE${NC}      = %b\n" "$(status_color "$core")"
+  printf " ${CYAN}│${NC} ${WHITE}• API STATUS${NC}= %b\n" "$(status_color "$api")"
+  printf " ${CYAN}│${NC} ${WHITE}• BOT STATUS${NC}= %b\n" "$(status_color "$bot")"
+  echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
 
 print_account_box() {
-  box_top
-  box_row "$(center_text "$CONTENT_W" "TOTAL ACCOUNT SUMMARY")"
-  box_mid
-  box_row "TOTAL USER  = ${TOTAL_USERS}"
-  box_row "ACTIVE      = ${ACTIVE_USERS}"
-  box_row "EXPIRED     = ${EXPIRED_USERS}"
-  box_row "API KEY     = $(mask_api_key "$API_KEY")"
-  box_bottom
+  echo -e " ${CYAN}╭────────────────────────────────────────────────────╮${NC}"
+  echo -e " ${CYAN}│${NC}${WHITE}               TOTAL ACCOUNT SUMMARY                ${NC}${CYAN}│${NC}"
+  echo -e " ${CYAN}├────────────────────────────────────────────────────┤${NC}"
+  printf " ${CYAN}│${NC} ${WHITE}TOTAL USER${NC}  = %-8s   ${WHITE}ACTIVE${NC} = %-8s\n" "${TOTAL_USERS}" "${ACTIVE_USERS}"
+  printf " ${CYAN}│${NC} ${WHITE}EXPIRED${NC}     = %-8s   ${WHITE}API KEY${NC}= %s\n" "${EXPIRED_USERS}" "$(mask_api_key "$API_KEY")"
+  echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
 
-menu_row() {
-  local left="$1"
-  local right="$2"
-  local line
-  printf -v line "%-24s %-24s" "$left" "$right"
-  box_row "$line"
-}
-
 print_menu_box() {
-  box_top
-  menu_row "[01] CREATE ACCOUNT"  "[06] SYSTEM INFO"
-  menu_row "[02] CREATE TRIAL"    "[07] BACKUP/RESTORE"
-  menu_row "[03] RENEW ACCOUNT"   "[08] VIEW API KEY"
-  menu_row "[04] DELETE ACCOUNT"  "[09] RESTART SERVICE"
-  menu_row "[05] LIST ACCOUNTS"   "[00] EXIT"
-  box_bottom
+  echo -e " ${CYAN}╭────────────────────────────────────────────────────╮${NC}"
+  printf " ${CYAN}│${NC} ${GREEN}[01]${NC} %-20s ${GREEN}[06]${NC} %-13s       ${CYAN}│${NC}\n" "CREATE ACCOUNT" "SYSTEM INFO"
+  printf " ${CYAN}│${NC} ${GREEN}[02]${NC} %-20s ${GREEN}[07]${NC} %-13s      ${CYAN}│${NC}\n" "CREATE TRIAL" "BACKUP/RESTORE"
+  printf " ${CYAN}│${NC} ${GREEN}[03]${NC} %-20s ${GREEN}[08]${NC} %-13s       ${CYAN}│${NC}\n" "RENEW ACCOUNT" "VIEW API KEY"
+  printf " ${CYAN}│${NC} ${GREEN}[04]${NC} %-20s ${GREEN}[09]${NC} %-13s     ${CYAN}│${NC}\n" "DELETE ACCOUNT" "RESTART SERVICE"
+  printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "EXIT"
+  echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
 
@@ -306,29 +277,6 @@ sub_header() {
   echo ""
 }
 
-show_account_result_box() {
-  local title="$1"
-  local password="$2"
-  local expired="$3"
-  local ip isp exp_fmt
-
-  get_server_info
-  ip="${CURRENT_PUBLIC_IP:-$CURRENT_PRIVATE_IP}"
-  [[ -z "${ip:-}" ]] && ip="-"
-  isp="$(get_isp_info "$ip")"
-  exp_fmt="$(format_expiry_human "$expired")"
-
-  echo ""
-  echo -e "${GREEN}${title}${NC}"
-  box_top
-  box_row "Host   : ${DOMAIN} (domain)"
-  box_row "IP     : ${ip} (ip vps)"
-  box_row "ISP    : ${isp} (nama isp)"
-  box_row "Pass   : ${password} (password)"
-  box_row "Expire : ${exp_fmt} (exp)"
-  box_bottom
-}
-
 create_account() {
   sub_header "CREATE PREMIUM ACCOUNT"
 
@@ -342,10 +290,11 @@ create_account() {
   body="$(api_post "/api/user/create" "{\"password\":\"${username}\",\"days\":${days}}")"
   print_result "$body"
 
+  domain="$(echo "$body" | json_value "domain")"
   expired="$(echo "$body" | json_value "expired")"
 
   if echo "$body" | json_success; then
-    show_account_result_box "CREATE AKUN ZIVPN PREMIUM" "$username" "$expired"
+    show_account_result_box "CREATE AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
   fi
 
   pause
@@ -367,10 +316,11 @@ create_trial() {
   body="$(api_post "/api/user/create" "{\"password\":\"${username}\",\"minutes\":${minutes}}")"
   print_result "$body"
 
+  domain="$(echo "$body" | json_value "domain")"
   expired="$(echo "$body" | json_value "expired")"
 
   if echo "$body" | json_success; then
-    show_account_result_box "TRIAL AKUN ZIVPN PREMIUM" "$username" "$expired"
+    show_account_result_box "TRIAL AKUN ZIVPN PREMIUM" "${domain:-$DOMAIN}" "${username}" "${expired:--}"
   fi
 
   pause
@@ -391,12 +341,7 @@ renew_account() {
 
   expired="$(echo "$body" | json_value "expired")"
   if echo "$body" | json_success; then
-    echo ""
-    echo -e "${GREEN}RENEW BERHASIL${NC}"
-    box_top
-    box_row "User   : ${username}"
-    box_row "Expire : $(format_expiry_human "$expired")"
-    box_bottom
+    printf "${WHITE}Expired baru ${NC}: %s\n" "${expired:--}"
   fi
 
   pause
@@ -486,19 +431,18 @@ system_info() {
   port="$(echo "$body" | json_value "port")"
   service="$(echo "$body" | json_value "service")"
 
-  box_top
-  box_row "Domain      : ${domain:--}"
-  box_row "Public IP   : ${public_ip:--}"
-  box_row "Private IP  : ${private_ip:--}"
-  box_row "Port        : ${port:-5667}"
-  box_row "Service     : ${service:-zivpn}"
-  box_row "OS          : $(get_os_name)"
-  box_row "RAM         : $(get_ram_info)"
-  box_row "Uptime      : $(get_uptime_info)"
-  box_row "zivpn       : $(service_state zivpn.service)"
-  box_row "api         : $(service_state zivpn-api.service)"
-  box_row "bot         : $(service_state zivpn-bot.service)"
-  box_bottom
+  printf "${WHITE}Domain      ${NC}: %s\n" "${domain:--}"
+  printf "${WHITE}Public IP   ${NC}: %s\n" "${public_ip:--}"
+  printf "${WHITE}Private IP  ${NC}: %s\n" "${private_ip:--}"
+  printf "${WHITE}Port        ${NC}: %s\n" "${port:-5667}"
+  printf "${WHITE}Service     ${NC}: %s\n" "${service:-zivpn}"
+  printf "${WHITE}OS          ${NC}: %s\n" "$(get_os_name)"
+  printf "${WHITE}RAM         ${NC}: %s\n" "$(get_ram_info)"
+  printf "${WHITE}Uptime      ${NC}: %s\n" "$(get_uptime_info)"
+  echo ""
+  printf "${WHITE}zivpn       ${NC}: %s\n" "$(service_state zivpn.service)"
+  printf "${WHITE}api         ${NC}: %s\n" "$(service_state zivpn-api.service)"
+  printf "${WHITE}bot         ${NC}: %s\n" "$(service_state zivpn-bot.service)"
 
   pause
 }
@@ -590,11 +534,9 @@ backup_restore_menu() {
   while true; do
     sub_header "BACKUP / RESTORE ZIVPN"
 
-    box_top
-    box_row "[01] Backup Data ZiVPN"
-    box_row "[02] Restore Data ZiVPN"
-    box_row "[00] Kembali"
-    box_bottom
+    echo -e "${GREEN}[01]${NC} Backup Data ZiVPN"
+    echo -e "${GREEN}[02]${NC} Restore Data ZiVPN"
+    echo -e "${RED}[00]${NC} Kembali"
     echo ""
 
     read -rp "Select options 》 " br
@@ -610,10 +552,8 @@ backup_restore_menu() {
 view_api_key() {
   sub_header "VIEW API KEY"
 
-  box_top
-  box_row "API URL    : ${BASE_URL}"
-  box_row "Masked Key : $(mask_api_key "$API_KEY")"
-  box_bottom
+  echo -e "${WHITE}API URL     ${NC}: ${BASE_URL}"
+  echo -e "${WHITE}Masked Key  ${NC}: $(mask_api_key "$API_KEY")"
   echo ""
 
   read -rp "Tampilkan full API key? (y/N): " ans
