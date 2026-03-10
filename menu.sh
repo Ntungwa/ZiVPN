@@ -368,9 +368,9 @@ count_users() {
 }
 
 print_top_banner() {
-  echo -e "${CYAN}╭────────────────────────────────────────────────────╮${NC}"
-  echo -e "${CYAN}│${NC}${RED}           SCRIPT PREMIUM YINNSTORE ZIVPN           ${NC}${CYAN}│${NC}"
-  echo -e "${CYAN}╰────────────────────────────────────────────────────╯${NC}"
+  echo -e "${CYAN}╭─────────────────────────────────────────────────────╮${NC}"
+  echo -e "${CYAN}│${NC}${RED}           SCRIPT PREMIUM YINNSTORE ZIVPN            ${NC}${CYAN}│${NC}"
+  echo -e "${CYAN}╰─────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
 
@@ -413,12 +413,13 @@ print_account_box() {
 
 print_menu_box() {
   echo -e " ${CYAN}╭────────────────────────────────────────────────────╮${NC}"
-  printf " ${CYAN}│${NC} ${GREEN}[01]${NC} %-20s ${GREEN}[06]${NC} %-13s       ${CYAN}│${NC}\n" "CREATE ACCOUNT" "SYSTEM INFO"
-  printf " ${CYAN}│${NC} ${GREEN}[02]${NC} %-20s ${GREEN}[07]${NC} %-13s      ${CYAN}│${NC}\n" "CREATE TRIAL" "BACKUP/RESTORE"
-  printf " ${CYAN}│${NC} ${GREEN}[03]${NC} %-20s ${GREEN}[08]${NC} %-13s       ${CYAN}│${NC}\n" "RENEW ACCOUNT" "VIEW API KEY"
-  printf " ${CYAN}│${NC} ${GREEN}[04]${NC} %-20s ${GREEN}[09]${NC} %-13s     ${CYAN}│${NC}\n" "DELETE ACCOUNT" "RESTART SERVICE"
-  printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${GREEN}[10]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "TG NOTIF"
-  printf " ${CYAN}│${NC} ${GREEN}[11]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "DEL ALL EXP" "EXIT"
+  printf " ${CYAN}│${NC} ${GREEN}[01]${NC} %-20s ${GREEN}[08]${NC} %-13s       ${CYAN}│${NC}\n" "CREATE ACCOUNT" "VIEW API KEY"
+  printf " ${CYAN}│${NC} ${GREEN}[02]${NC} %-20s ${GREEN}[09]${NC} %-13s     ${CYAN}│${NC}\n" "CREATE TRIAL" "RESTART SERVICE"
+  printf " ${CYAN}│${NC} ${GREEN}[03]${NC} %-20s ${GREEN}[10]${NC} %-13s       ${CYAN}│${NC}\n" "RENEW ACCOUNT" "TG NOTIF"
+  printf " ${CYAN}│${NC} ${GREEN}[04]${NC} %-20s ${GREEN}[11]${NC} %-13s       ${CYAN}│${NC}\n" "DELETE ACCOUNT" "DEL ALL EXP"
+  printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${GREEN}[12]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "CEK RUNNING"
+  printf " ${CYAN}│${NC} ${GREEN}[06]${NC} %-20s ${GREEN}[13]${NC} %-13s       ${CYAN}│${NC}\n" "SYSTEM INFO" "SPEEDTEST"
+  printf " ${CYAN}│${NC} ${GREEN}[07]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "BACKUP/RESTORE" "EXIT"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
@@ -720,8 +721,90 @@ restart_services() {
   pause
 }
 
+check_running_system() {
+  sub_header "CEK RUNNING SISTEM"
+
+  local core_state api_state bot_state
+  local core_bin api_bin bot_bin
+  local info_body api_ok api_msg
+
+  core_state="$(service_state zivpn.service)"
+  api_state="$(service_state zivpn-api.service)"
+  bot_state="$(service_state zivpn-bot.service)"
+
+  [[ -x /usr/local/bin/zivpn ]] && core_bin="ADA" || core_bin="TIDAK ADA"
+  [[ -x /etc/zivpn/api/zivpn-api ]] && api_bin="ADA" || api_bin="TIDAK ADA"
+  [[ -x /etc/zivpn/api/zivpn-bot ]] && bot_bin="ADA" || bot_bin="TIDAK ADA"
+
+  info_body="$(api_get "/api/info")"
+  if echo "$info_body" | json_success; then
+    api_ok="YES"
+    api_msg="API normal"
+  else
+    api_ok="NO"
+    api_msg="$(echo "$info_body" | json_value "message")"
+    [[ -z "${api_msg:-}" ]] && api_msg="API tidak merespon / auth gagal"
+  fi
+
+  printf "${WHITE}Domain         ${NC}: %s\n" "${DOMAIN}"
+  printf "${WHITE}API URL        ${NC}: %s\n" "${BASE_URL}"
+  printf "${WHITE}Core Service   ${NC}: %s\n" "${core_state}"
+  printf "${WHITE}API Service    ${NC}: %s\n" "${api_state}"
+  printf "${WHITE}Bot Service    ${NC}: %s\n" "${bot_state}"
+  printf "${WHITE}Core Binary    ${NC}: %s\n" "${core_bin}"
+  printf "${WHITE}API Binary     ${NC}: %s\n" "${api_bin}"
+  printf "${WHITE}Bot Binary     ${NC}: %s\n" "${bot_bin}"
+  printf "${WHITE}API Check      ${NC}: %s\n" "${api_ok}"
+  printf "${WHITE}API Message    ${NC}: %s\n" "${api_msg}"
+  printf "${WHITE}OS             ${NC}: %s\n" "$(get_os_name)"
+  printf "${WHITE}RAM            ${NC}: %s\n" "$(get_ram_info)"
+  printf "${WHITE}Uptime         ${NC}: %s\n" "$(get_uptime_info)"
+
+  pause
+}
+
+run_speedtest() {
+  sub_header "SPEEDTEST"
+
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  echo -e "${CYAN}Menjalankan speedtest...${NC}"
+  echo ""
+
+  if command -v speedtest >/dev/null 2>&1; then
+    speedtest --accept-license --accept-gdpr >"$tmpfile" 2>&1 || speedtest >"$tmpfile" 2>&1 || true
+  elif command -v speedtest-cli >/dev/null 2>&1; then
+    speedtest-cli --simple >"$tmpfile" 2>&1 || true
+  elif command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    curl -fsSL "https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py" -o /tmp/speedtest-zivpn.py 2>/dev/null || true
+    if [[ -f /tmp/speedtest-zivpn.py ]]; then
+      python3 /tmp/speedtest-zivpn.py --simple >"$tmpfile" 2>&1 || true
+      rm -f /tmp/speedtest-zivpn.py
+    fi
+  fi
+
+  if [[ ! -s "$tmpfile" ]]; then
+    echo -e "${YELLOW}! Speedtest tidak tersedia.${NC}"
+    echo -e "${YELLOW}! Install salah satu:${NC}"
+    echo " - speedtest"
+    echo " - speedtest-cli"
+    echo " - python3 + curl"
+    rm -f "$tmpfile"
+    pause
+    return
+  fi
+
+  cat "$tmpfile"
+  rm -f "$tmpfile"
+
+  pause
+}
+
 backup_vpn() {
   sub_header "BACKUP DATA ZIVPN"
+
+  local backup_dir backup_file tmpdir
 
   backup_dir="/root/zivpn-backup"
   mkdir -p "$backup_dir"
@@ -766,6 +849,8 @@ Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
 restore_vpn() {
   sub_header "RESTORE DATA ZIVPN"
 
+  local zipfile tmpdir info_body
+
   read -rp "Masukkan path file backup .zip : " zipfile
   [[ -f "${zipfile:-}" ]] || { echo -e "${RED}File tidak ditemukan${NC}"; pause; return; }
 
@@ -776,26 +861,53 @@ restore_vpn() {
   fi
 
   tmpdir="$(mktemp -d)"
-  unzip -oq "$zipfile" -d "$tmpdir" || { rm -rf "$tmpdir"; echo -e "${RED}Gagal extract backup${NC}"; pause; return; }
+  unzip -oq "$zipfile" -d "$tmpdir" || {
+    rm -rf "$tmpdir"
+    echo -e "${RED}Gagal extract backup${NC}"
+    pause
+    return
+  }
 
   [[ -d "${tmpdir}/etc-zivpn" ]] && mkdir -p /etc/zivpn && cp -a "${tmpdir}/etc-zivpn/." /etc/zivpn/
   [[ -d "${tmpdir}/systemd" ]] && cp -f "${tmpdir}/systemd/"* /etc/systemd/system/ 2>/dev/null || true
 
+  chmod 600 /etc/zivpn/apikey 2>/dev/null || true
+  chmod 644 /etc/zivpn/domain /etc/zivpn/api_port 2>/dev/null || true
+
   systemctl daemon-reload
-  systemctl restart zivpn.service 2>/dev/null || true
-  systemctl restart zivpn-api.service 2>/dev/null || true
-  systemctl restart zivpn-bot.service 2>/dev/null || true
+
+  if systemctl list-unit-files | grep -q '^zivpn.service'; then
+    systemctl restart zivpn.service 2>/dev/null || systemctl start zivpn.service 2>/dev/null || true
+  fi
+  if systemctl list-unit-files | grep -q '^zivpn-api.service'; then
+    systemctl restart zivpn-api.service 2>/dev/null || systemctl start zivpn-api.service 2>/dev/null || true
+  fi
+  if systemctl list-unit-files | grep -q '^zivpn-bot.service'; then
+    systemctl restart zivpn-bot.service 2>/dev/null || systemctl start zivpn-bot.service 2>/dev/null || true
+  fi
 
   rm -rf "$tmpdir"
 
+  sleep 2
+  load_env
+  get_current_users_list > "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
+
   echo -e "${GREEN}✔ Restore data ZiVPN selesai${NC}"
+  echo -e "${WHITE}Domain aktif ${NC}: ${DOMAIN}"
+  echo -e "${WHITE}API aktif    ${NC}: ${BASE_URL}"
+
+  info_body="$(api_get "/api/info")"
+  if echo "$info_body" | json_success; then
+    echo -e "${GREEN}✔ API berhasil merespon setelah restore${NC}"
+  else
+    echo -e "${YELLOW}! Restore selesai, tapi API belum merespon normal${NC}"
+    echo -e "${YELLOW}! Cek menu [12] CEK RUNNING untuk diagnosa${NC}"
+  fi
 
   tg_send_message "<b>RESTORE DATA ZIVPN BERHASIL</b>
 Host    : <code>$(tg_html_escape "$DOMAIN")</code>
 Path    : <code>$(tg_html_escape "$zipfile")</code>
 Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
-
-  get_current_users_list > "$WATCH_SNAPSHOT_FILE" 2>/dev/null || true
 
   pause
 }
@@ -907,6 +1019,8 @@ main_menu() {
       9|09) restart_services ;;
       10) telegram_notif_menu ;;
       11) delete_all_expired ;;
+      12) check_running_system ;;
+      13) run_speedtest ;;
       0|00) clear; exit 0 ;;
       *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
     esac
