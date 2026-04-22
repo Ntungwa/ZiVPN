@@ -477,7 +477,7 @@ print_menu_box() {
   printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${GREEN}[12]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "CEK RUNNING"
   printf " ${CYAN}│${NC} ${GREEN}[06]${NC} %-20s ${GREEN}[13]${NC} %-13s       ${CYAN}│${NC}\n" "SYSTEM INFO" "SPEEDTEST"
   printf " ${CYAN}│${NC} ${GREEN}[07]${NC} %-20s ${GREEN}[14]${NC} %-13s       ${CYAN}│${NC}\n" "BACKUP/RESTORE" "AUTO REBOOT"
-  printf " ${CYAN}│${NC} ${RED}[00]${NC} %-20s                          ${CYAN}│${NC}\n" "EXIT"
+  printf " ${CYAN}│${NC} ${RED}[00]${NC} %-20s                      ${CYAN}│${NC}\n" "EXIT"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
