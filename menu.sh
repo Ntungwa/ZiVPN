@@ -7,6 +7,7 @@ DOMAIN_FILE="/etc/zivpn/domain"
 TG_NOTIFY_FILE="/etc/zivpn/telegram_notify.conf"
 WATCH_PID_FILE="/etc/zivpn/.tg_notify_watch.pid"
 WATCH_SNAPSHOT_FILE="/etc/zivpn/.tg_notify_users.snapshot"
+AUTO_REBOOT_CRON_FILE="/etc/cron.d/zivpn-auto-reboot"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -228,6 +229,61 @@ get_isp_info() {
   echo "$isp"
 }
 
+get_auto_reboot_status() {
+  if [[ ! -f "$AUTO_REBOOT_CRON_FILE" ]]; then
+    echo "OFF"
+    return
+  fi
+
+  local lines
+  lines="$(grep -v '^[[:space:]]*$' "$AUTO_REBOOT_CRON_FILE" 2>/dev/null | grep -v '^[[:space:]]*#' || true)"
+
+  if echo "$lines" | grep -q '^0 0 \* \* \* root /sbin/reboot'; then
+    if echo "$lines" | grep -q '^0 5 \* \* \* root /sbin/reboot'; then
+      echo "2x24 JAM (00:00 & 05:00)"
+    else
+      echo "1x24 JAM (00:00)"
+    fi
+    return
+  fi
+
+  echo "CUSTOM/UNKNOWN"
+}
+
+write_auto_reboot_cron() {
+  local mode="$1"
+  mkdir -p /etc/cron.d
+
+  case "$mode" in
+    once)
+      cat >"$AUTO_REBOOT_CRON_FILE" <<'EOF'
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 0 * * * root /sbin/reboot
+EOF
+      ;;
+    twice)
+      cat >"$AUTO_REBOOT_CRON_FILE" <<'EOF'
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 0 * * * root /sbin/reboot
+0 5 * * * root /sbin/reboot
+EOF
+      ;;
+    off)
+      rm -f "$AUTO_REBOOT_CRON_FILE"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  chmod 644 "$AUTO_REBOOT_CRON_FILE" 2>/dev/null || true
+  systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
+}
+
 show_account_result_box() {
   local title="$1"
   local host="$2"
@@ -407,6 +463,7 @@ print_account_box() {
   echo -e " ${CYAN}├────────────────────────────────────────────────────┤${NC}"
   printf " ${CYAN}│${NC} ${WHITE}TOTAL USER${NC}  = %-8s   ${WHITE}ACTIVE${NC} = %-8s\n" "${TOTAL_USERS}" "${ACTIVE_USERS}"
   printf " ${CYAN}│${NC} ${WHITE}EXPIRED${NC}     = %-8s   ${WHITE}API KEY${NC}= %s\n" "${EXPIRED_USERS}" "$(mask_api_key "$API_KEY")"
+  printf " ${CYAN}│${NC} ${WHITE}AUTO RB${NC}    = %s\n" "$(get_auto_reboot_status)"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
@@ -419,7 +476,8 @@ print_menu_box() {
   printf " ${CYAN}│${NC} ${GREEN}[04]${NC} %-20s ${GREEN}[11]${NC} %-13s       ${CYAN}│${NC}\n" "DELETE ACCOUNT" "DEL ALL EXP"
   printf " ${CYAN}│${NC} ${GREEN}[05]${NC} %-20s ${GREEN}[12]${NC} %-13s       ${CYAN}│${NC}\n" "LIST ACCOUNTS" "CEK RUNNING"
   printf " ${CYAN}│${NC} ${GREEN}[06]${NC} %-20s ${GREEN}[13]${NC} %-13s       ${CYAN}│${NC}\n" "SYSTEM INFO" "SPEEDTEST"
-  printf " ${CYAN}│${NC} ${GREEN}[07]${NC} %-20s ${RED}[00]${NC} %-13s       ${CYAN}│${NC}\n" "BACKUP/RESTORE" "EXIT"
+  printf " ${CYAN}│${NC} ${GREEN}[07]${NC} %-20s ${GREEN}[14]${NC} %-13s       ${CYAN}│${NC}\n" "BACKUP/RESTORE" "AUTO REBOOT"
+  printf " ${CYAN}│${NC} ${RED}[00]${NC} %-20s                              ${CYAN}│${NC}\n" "EXIT"
   echo -e " ${CYAN}╰────────────────────────────────────────────────────╯${NC}"
   echo ""
 }
@@ -697,6 +755,7 @@ system_info() {
   printf "${WHITE}OS          ${NC}: %s\n" "$(get_os_name)"
   printf "${WHITE}RAM         ${NC}: %s\n" "$(get_ram_info)"
   printf "${WHITE}Uptime      ${NC}: %s\n" "$(get_uptime_info)"
+  printf "${WHITE}Auto Reboot ${NC}: %s\n" "$(get_auto_reboot_status)"
   echo ""
   printf "${WHITE}zivpn       ${NC}: %s\n" "$(service_state zivpn.service)"
   printf "${WHITE}api         ${NC}: %s\n" "$(service_state zivpn-api.service)"
@@ -759,6 +818,7 @@ check_running_system() {
   printf "${WHITE}OS             ${NC}: %s\n" "$(get_os_name)"
   printf "${WHITE}RAM            ${NC}: %s\n" "$(get_ram_info)"
   printf "${WHITE}Uptime         ${NC}: %s\n" "$(get_uptime_info)"
+  printf "${WHITE}Auto Reboot    ${NC}: %s\n" "$(get_auto_reboot_status)"
 
   pause
 }
@@ -823,6 +883,9 @@ backup_vpn() {
   [[ -f /etc/systemd/system/zivpn.service ]] && cp -f /etc/systemd/system/zivpn.service "${tmpdir}/systemd/" || true
   [[ -f /etc/systemd/system/zivpn-api.service ]] && cp -f /etc/systemd/system/zivpn-api.service "${tmpdir}/systemd/" || true
   [[ -f /etc/systemd/system/zivpn-bot.service ]] && cp -f /etc/systemd/system/zivpn-bot.service "${tmpdir}/systemd/" || true
+  [[ -f /etc/systemd/system/zivpn-firewall.service ]] && cp -f /etc/systemd/system/zivpn-firewall.service "${tmpdir}/systemd/" || true
+  [[ -f /etc/iptables/rules.v4 ]] && mkdir -p "${tmpdir}/iptables" && cp -f /etc/iptables/rules.v4 "${tmpdir}/iptables/" || true
+  [[ -f "$AUTO_REBOOT_CRON_FILE" ]] && mkdir -p "${tmpdir}/cron" && cp -f "$AUTO_REBOOT_CRON_FILE" "${tmpdir}/cron/" || true
 
   (
     cd "$tmpdir"
@@ -870,11 +933,15 @@ restore_vpn() {
 
   [[ -d "${tmpdir}/etc-zivpn" ]] && mkdir -p /etc/zivpn && cp -a "${tmpdir}/etc-zivpn/." /etc/zivpn/
   [[ -d "${tmpdir}/systemd" ]] && cp -f "${tmpdir}/systemd/"* /etc/systemd/system/ 2>/dev/null || true
+  [[ -f "${tmpdir}/iptables/rules.v4" ]] && mkdir -p /etc/iptables && cp -f "${tmpdir}/iptables/rules.v4" /etc/iptables/rules.v4
+  [[ -f "${tmpdir}/cron/zivpn-auto-reboot" ]] && cp -f "${tmpdir}/cron/zivpn-auto-reboot" "$AUTO_REBOOT_CRON_FILE"
 
   chmod 600 /etc/zivpn/apikey 2>/dev/null || true
   chmod 644 /etc/zivpn/domain /etc/zivpn/api_port 2>/dev/null || true
+  chmod 644 "$AUTO_REBOOT_CRON_FILE" 2>/dev/null || true
 
   systemctl daemon-reload
+  systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
 
   if systemctl list-unit-files | grep -q '^zivpn.service'; then
     systemctl restart zivpn.service 2>/dev/null || systemctl start zivpn.service 2>/dev/null || true
@@ -884,6 +951,12 @@ restore_vpn() {
   fi
   if systemctl list-unit-files | grep -q '^zivpn-bot.service'; then
     systemctl restart zivpn-bot.service 2>/dev/null || systemctl start zivpn-bot.service 2>/dev/null || true
+  fi
+  if [[ -f /etc/systemd/system/zivpn-firewall.service ]]; then
+    systemctl restart zivpn-firewall.service 2>/dev/null || true
+  fi
+  if [[ -f /etc/iptables/rules.v4 ]]; then
+    /sbin/iptables-restore /etc/iptables/rules.v4 2>/dev/null || true
   fi
 
   rm -rf "$tmpdir"
@@ -999,6 +1072,64 @@ Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
   done
 }
 
+auto_reboot_menu() {
+  while true; do
+    sub_header "AUTO REBOOT"
+
+    echo -e "${WHITE}Status sekarang ${NC}: $(get_auto_reboot_status)"
+    echo ""
+    echo -e "${GREEN}[01]${NC} Auto reboot 1x24 jam (00:00)"
+    echo -e "${GREEN}[02]${NC} Auto reboot 2x24 jam (00:00 & 05:00)"
+    echo -e "${GREEN}[03]${NC} Disable auto reboot"
+    echo -e "${GREEN}[04]${NC} Lihat config auto reboot"
+    echo -e "${RED}[00]${NC} Kembali"
+    echo ""
+
+    read -rp "Select options 》 " aopt
+    case "${aopt:-}" in
+      1|01)
+        write_auto_reboot_cron once
+        echo -e "${GREEN}✔ Auto reboot aktif: 1x24 jam jam 00:00${NC}"
+        tg_send_message "<b>AUTO REBOOT AKTIF</b>
+Mode    : <code>1x24 jam</code>
+Jam     : <code>00:00</code>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+        pause
+        ;;
+      2|02)
+        write_auto_reboot_cron twice
+        echo -e "${GREEN}✔ Auto reboot aktif: 2x24 jam jam 00:00 & 05:00${NC}"
+        tg_send_message "<b>AUTO REBOOT AKTIF</b>
+Mode    : <code>2x24 jam</code>
+Jam     : <code>00:00 &amp; 05:00</code>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+        pause
+        ;;
+      3|03)
+        write_auto_reboot_cron off
+        echo -e "${YELLOW}✔ Auto reboot dinonaktifkan${NC}"
+        tg_send_message "<b>AUTO REBOOT NONAKTIF</b>
+Host    : <code>$(tg_html_escape "$DOMAIN")</code>
+Time    : <code>$(date '+%d %B %Y %H:%M')</code>"
+        pause
+        ;;
+      4|04)
+        echo ""
+        if [[ -f "$AUTO_REBOOT_CRON_FILE" ]]; then
+          cat "$AUTO_REBOOT_CRON_FILE"
+        else
+          echo -e "${YELLOW}Belum ada config auto reboot${NC}"
+        fi
+        pause
+        ;;
+      0|00) return ;;
+      *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
+    esac
+  done
+}
+
 main_menu() {
   ensure_delete_watcher
   while true; do
@@ -1021,6 +1152,7 @@ main_menu() {
       11) delete_all_expired ;;
       12) check_running_system ;;
       13) run_speedtest ;;
+      14) auto_reboot_menu ;;
       0|00) clear; exit 0 ;;
       *) echo -e "${RED}Menu tidak valid${NC}"; sleep 1 ;;
     esac
