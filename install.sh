@@ -64,16 +64,41 @@ ufw_allow_safe() {
   fi
 }
 
+detect_iface() {
+  local iface
+  iface="$(ip -4 route ls 2>/dev/null | awk '/default/ {print $5; exit}')"
+  iface="${iface:-eth0}"
+  echo "$iface"
+}
+
 iptables_add_safe() {
   local iface="$1"
   local dports="$2"
   if iptables -t nat -C PREROUTING -i "$iface" -p udp --dport "$dports" -j DNAT --to-destination :5667 &>>"$LOG_FILE"; then
     return 0
   fi
-  iptables -t nat -A PREROUTING -i "$iface" -p udp --dport "$dports" -j DNAT --to-destination :5667 &>>"$LOG_FILE" || true
+  iptables -t nat -A PREROUTING -i "$iface" -p udp --dport "$dports" -j DNAT --to-destination :5667 &>>"$LOG_FILE"
+}
+
+save_iptables_rules() {
+  mkdir -p /etc/iptables
+  iptables-save > /etc/iptables/rules.v4 2>>"$LOG_FILE"
+}
+
+setup_firewall_persistence() {
+  local iface="$1"
+
+  print_task "Configuring firewall NAT"
+  iptables_add_safe "$iface" "6000:19999"
+  save_iptables_rules
+  systemctl enable netfilter-persistent &>>"$LOG_FILE" || true
+  systemctl restart netfilter-persistent &>>"$LOG_FILE" || true
+  print_done "Configuring firewall NAT"
 }
 
 clear
+: >"$LOG_FILE"
+
 echo -e "${BOLD}ZiVPN UDP Installer${RESET}"
 echo -e "${GRAY}YinnStore Edition${RESET}"
 echo ""
@@ -85,6 +110,8 @@ if [[ "$(uname -s)" != "Linux" ]] || [[ "$(uname -m)" != "x86_64" ]]; then
   exit 1
 fi
 
+export DEBIAN_FRONTEND=noninteractive
+
 # =========================
 # CLEAN OLD (hard reinstall)
 # =========================
@@ -93,8 +120,10 @@ if [[ -f /usr/local/bin/zivpn || -d /etc/zivpn ]]; then
 
   svc_stop_disable_rm "zivpn-bot.service"
   svc_stop_disable_rm "zivpn-api.service"
+  svc_stop_disable_rm "zivpn-firewall.service"
   svc_stop_disable_rm "zivpn.service"
 
+  rm -f /etc/systemd/system/zivpn-firewall.service &>>"$LOG_FILE" || true
   systemctl daemon-reload &>>"$LOG_FILE" || true
 
   rm -f /usr/local/bin/zivpn &>>"$LOG_FILE" || true
@@ -109,7 +138,7 @@ fi
 # BASE DEPENDENCIES
 # =========================
 run_silent "Updating system" "apt-get update -y"
-run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables zip unzip cron"
+run_silent "Installing base deps" "apt-get install -y curl wget openssl ca-certificates net-tools iptables iptables-persistent netfilter-persistent zip unzip cron"
 run_silent "Setting Timezone" "timedatectl set-timezone Asia/Jakarta || true"
 run_silent "Enabling cron service" "systemctl enable --now cron || true"
 
@@ -222,12 +251,42 @@ sysctl --system &>>"$LOG_FILE" || true
 print_done "Applying sysctl tunings"
 
 # =========================
+# FIREWALL + NAT (SETUP FIRST)
+# =========================
+iface="$(detect_iface)"
+setup_firewall_persistence "$iface"
+
+ufw_allow_safe "6000:19999/udp"
+ufw_allow_safe "5667/udp"
+ufw_allow_safe "${API_PORT}/tcp"
+
+# =========================
+# SYSTEMD: FIREWALL RESTORE SERVICE
+# =========================
+cat >/etc/systemd/system/zivpn-firewall.service <<EOF
+[Unit]
+Description=ZiVPN Firewall Restore
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/iptables-restore /etc/iptables/rules.v4
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# =========================
 # SYSTEMD: CORE SERVICE
 # =========================
 cat >/etc/systemd/system/zivpn.service <<EOF
 [Unit]
 Description=ZIVPN UDP VPN Server (YinnStore)
-After=network.target
+Wants=network-online.target
+After=network-online.target netfilter-persistent.service zivpn-firewall.service
+Requires=zivpn-firewall.service
 
 [Service]
 Type=simple
@@ -236,6 +295,7 @@ WorkingDirectory=/etc/zivpn
 ExecStart=/usr/local/bin/zivpn server -c /etc/zivpn/config.json
 Restart=always
 RestartSec=3
+StartLimitIntervalSec=0
 LimitNOFILE=65535
 Environment=ZIVPN_LOG_LEVEL=info
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
@@ -267,7 +327,8 @@ print_done "Compiling API"
 cat >/etc/systemd/system/zivpn-api.service <<EOF
 [Unit]
 Description=ZiVPN Golang API Service (YinnStore)
-After=network.target zivpn.service
+Wants=network-online.target
+After=network-online.target zivpn.service
 
 [Service]
 Type=simple
@@ -285,6 +346,7 @@ EOF
 # ENABLE + START SERVICES
 # =========================
 run_silent "Reloading systemd" "systemctl daemon-reload"
+run_silent "Enabling firewall restore" "systemctl enable --now netfilter-persistent zivpn-firewall.service"
 run_silent "Starting core" "systemctl enable --now zivpn.service"
 run_silent "Starting API" "systemctl enable --now zivpn-api.service"
 
@@ -303,16 +365,11 @@ cron_cmd='0 0 * * * /usr/bin/curl -s -X POST -H "X-API-Key: $(cat /etc/zivpn/api
 print_done "Configuring Cron Auto-Expire"
 
 # =========================
-# FIREWALL + NAT
+# FINAL SAVE IPTABLES AGAIN
 # =========================
-iface="$(ip -4 route ls 2>/dev/null | awk '/default/ {print $5; exit}')"
-iface="${iface:-eth0}"
-
-iptables_add_safe "$iface" "6000:19999"
-
-ufw_allow_safe "6000:19999/udp"
-ufw_allow_safe "5667/udp"
-ufw_allow_safe "${API_PORT}/tcp"
+print_task "Saving iptables rules"
+save_iptables_rules
+print_done "Saving iptables rules"
 
 # =========================
 # FINISH
@@ -324,6 +381,7 @@ echo -e "${BOLD}Installation Complete${RESET}"
 echo -e "Domain  : ${CYAN}$domain${RESET}"
 echo -e "API     : ${CYAN}$API_PORT${RESET}"
 echo -e "API Key : ${CYAN}$api_key${RESET}"
+echo -e "Iface   : ${CYAN}$iface${RESET}"
 echo -e "Menu    : ${CYAN}menu-zivpn / menu${RESET}"
 echo -e "Bot     : ${CYAN}not installed${RESET}"
 echo -e "Login   : ${CYAN}normal, tidak auto buka menu${RESET}"
