@@ -68,4 +68,4 @@ Project ini umumnya terdiri dari beberapa komponen utama:
 Jalankan perintah berikut di VPS sebagai **root**:
 
 ```bash
-wget -q https://raw.githubusercontent.com/YINNSTORE/ZIVPN/main/install.sh && chmod +x install.sh && ./install.sh
+wget -q https://raw.githubusercontent.com/Ntungwa/ZIVPN/refs/heads/main/install.sh && chmod +x install.sh && ./install.sh
