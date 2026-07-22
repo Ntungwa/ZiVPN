@@ -4,7 +4,7 @@ set -euo pipefail
 # =========================
 # CONFIG
 # =========================
-REPO_RAW="https://raw.githubusercontent.com/YINNSTORE/ZIVPN/main"
+REPO_RAW="https://raw.githubusercontent.com/Ntungwa/ZiVPN/main"
 TS="$(date +%s)"
 
 # Colors
