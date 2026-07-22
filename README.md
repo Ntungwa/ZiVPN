@@ -74,5 +74,5 @@ This project generally consists of the following main components:
 Run the following command on your VPS as root:
 
 ```bash
-wget -q https://raw.githubusercontent.com/Ntungwa/ZiVPN/refs/heads/main/install.sh && chmod +x install.sh && ./install.sh
+wget -q https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/install.sh && chmod +x install.sh && ./install.sh
 ```
