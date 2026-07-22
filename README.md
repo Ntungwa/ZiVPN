@@ -74,5 +74,81 @@ This project generally consists of the following main components:
 Run the following command on your VPS as root:
 
 ```bash
-wget -q https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/install.sh && chmod +x install.sh && ./install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/install.sh)
+```
+
+---
+
+🗑️ Uninstall
+
+To completely remove ZiVPN and all its components from your system, run:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/uninstall.sh)
+```
+
+This will remove:
+
+· All ZiVPN services (zivpn.service, zivpn-api.service, zivpn-bot.service, zivpn-firewall.service)
+· badvpn-udpgw service and binary
+· Configuration files (/etc/zivpn/*)
+· API binaries and sources
+· Cron jobs (auto‑expiry)
+· iptables NAT rules and UFW rules
+
+Dependencies: The script will ask for confirmation before removing golang, git, net-tools, and ufw. You can skip this by setting PURGE_DEPS=0:
+
+```bash
+PURGE_DEPS=0 bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/uninstall.sh)
+```
+
+---
+
+🧹 Manual Cleanup (if needed)
+
+If the uninstall script fails or you want to clean up manually, these commands will remove all ZiVPN traces:
+
+```bash
+systemctl stop zivpn.service zivpn-api.service zivpn-bot.service badvpn-udpgw.service 2>/dev/null || true
+systemctl disable zivpn.service zivpn-api.service zivpn-bot.service badvpn-udpgw.service 2>/dev/null || true
+rm -rf /etc/zivpn /usr/local/bin/zivpn /usr/local/bin/menu-zivpn /usr/local/bin/badvpn-udpgw
+rm -f /etc/systemd/system/zivpn*.service /etc/systemd/system/badvpn-udpgw.service
+systemctl daemon-reload
+iptables -t nat -D PREROUTING -i $(ip -4 route ls | awk '/default/ {print $5; exit}') -p udp --dport 6000:19999 -j DNAT --to-destination :5667 2>/dev/null || true
+```
+
+---
+
+📝 Logs
+
+· Installation log: /tmp/zivpn_install.log
+· Uninstallation log: /tmp/zivpn_uninstall.log
+
+---
+
+📁 Repository Structure
+
+```
+ZiVPN/
+├── install.sh      # Main installer (Ntungwa Edition)
+├── uninstall.sh    # Complete removal script
+├── menu.sh         # VPS management menu
+├── config.json     # Default VPN configuration
+├── zivpn-api.go    # Go API server source
+├── go.mod          # Go module dependencies
+└── README.md       # This file
+```
+
+---
+
+📞 Support
+
+For issues or questions, contact our Telegram channel: @Ntungwa
+
+---
+
+⚠️ Disclaimer
+
+This project is provided as-is for educational and personal use. The developer is not responsible for any misuse or damages caused by this software.
+
 ```
