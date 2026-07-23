@@ -1,77 +1,71 @@
-🚀 Ntungwa ZiVPN UDP Tunnel
+# 🚀 Ntungwa ZiVPN UDP Tunnel
 
-Ntungwa ZiVPN UDP Tunnel is a lightweight, fast, and easy-to-manage premium UDP tunneling solution.
-Equipped with an API Server, Telegram Bot, VPS Menu Panel, and a Backup & Restore system to simplify account management on your VPS.
-
----
-
-✨ Key Features
-
-⚡ Core & Performance
-
-· Lightweight and stable ZiVPN UDP Core
-· Performance optimised for long-term usage
-· Account management support via API, Bot, and VPS Menu
-
-🔐 Security
-
-· API Key automatically generated during installation
-· SSL certificate auto‑generated
-· API access validated using the X-API-Key header
-
-👤 User Management
-
-· Create premium accounts
-· Create trial accounts based on minutes
-· Renew accounts
-· Delete accounts
-· List all accounts
-· Auto‑revoke expired accounts
-
-🤖 Telegram Bot Integration
-
-· Account creation via bot
-· Trial account creation via bot
-· Notifications for account creation / trial / renewal / deletion
-· Admin panel for data management
-· Support for managing ZiVPN servers
-
-🖥️ VPS Menu Panel
-
-· Create accounts directly from the VPS
-· Create trial accounts from the VPS
-· Renew accounts
-· Delete accounts
-· Backup & Restore data
-· Check running system
-· VPS speedtest
-· Server information monitoring
-
-💾 Backup & Restore
-
-· Backup server data to a ZIP file
-· Restore data from a ZIP file
-· Ideal for migrating data between VPS instances that already have the ZiVPN script installed
+> **Ntungwa ZiVPN UDP Tunnel** is a lightweight, fast, and easy-to-manage premium UDP tunneling solution.  
+> Equipped with an **API Server**, **Telegram Bot**, **VPS Menu Panel**, and a **Backup & Restore** system to simplify account management on your VPS.
 
 ---
 
-📦 Project Contents
+## ✨ Key Features
+
+### ⚡ Core & Performance
+- **ZiVPN UDP Core** that is lightweight and stable
+- Performance optimised for long-term usage
+- Account management support via **API**, **Bot**, and **VPS Menu**
+
+### 🔐 Security
+- **API Key** automatically generated during installation
+- SSL certificate auto-generated
+- API access validated using the `X-API-Key` header
+
+### 👤 User Management
+- Create premium accounts
+- Create trial accounts based on **minutes**
+- Renew accounts
+- Delete accounts
+- List all accounts
+- Auto-revoke expired accounts
+
+### 🤖 Telegram Bot Integration
+- Account creation via bot
+- Trial account creation via bot
+- Notifications for account creation / trial / renewal / deletion
+- Admin panel for data management
+- Support for managing ZiVPN servers
+
+### 🖥️ VPS Menu Panel
+- Create accounts directly from the VPS
+- Create trial accounts from the VPS
+- Renew accounts
+- Delete accounts
+- Backup & Restore data
+- Check running system
+- VPS speedtest
+- Server information monitoring
+
+### 💾 Backup & Restore
+- Backup server data to a ZIP file
+- Restore data from a ZIP file
+- Ideal for migrating data between VPS instances that already have the ZiVPN script installed
+
+---
+
+## 📦 Project Contents
 
 This project generally consists of the following main components:
 
-· ZiVPN Core
-· API Server
-· Telegram Bot
-· VPS Menu
-· Installer
-· Uninstaller
-· Systemd & config.json configuration
+- **ZiVPN Core**
+- **API Server**
+- **Telegram Bot**
+- **VPS Menu**
+- **Installer**
+- **Uninstaller**
+- **Systemd** & **config.json** configuration
 
 ---
 
-📥 Installation
+## 📥 Installation
 
-Run the following command on your VPS as root:
+Run the following command on your VPS as **root**:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/install.sh)
@@ -79,7 +73,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/install.s
 
 ---
 
-🗑️ Uninstall
+## 🗑️ Uninstall
 
 To completely remove ZiVPN and all its components from your system, run:
 
@@ -87,16 +81,22 @@ To completely remove ZiVPN and all its components from your system, run:
 bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/uninstall.sh)
 ```
 
-This will remove:
+**This will remove:**
 
-· All ZiVPN services (zivpn.service, zivpn-api.service, zivpn-bot.service, zivpn-firewall.service)
-· badvpn-udpgw service and binary
-· Configuration files (/etc/zivpn/*)
-· API binaries and sources
-· Cron jobs (auto‑expiry)
+· All ZiVPN services (`zivpn.service`, `zivpn-api.service`, `zivpn-bot.service`, `zivpn-firewall.service`)  
+· `badvpn-udpgw` service and binary  
+· Configuration files (`/etc/zivpn/*`)  
+· API binaries and sources  
+· Cron jobs (auto-expiry)  
 · iptables NAT rules and UFW rules
 
-Dependencies: The script will ask for confirmation before removing golang, git, net-tools, and ufw. You can skip this by setting PURGE_DEPS=0:
+---
+
+### 🧹 Purge Dependencies (optional)
+
+The uninstall script can also remove build dependencies (`golang`, `git`, `net-tools`, `ufw`). It will **ask for confirmation** before purging.
+
+If you want to skip the dependency purge, set `PURGE_DEPS=0`:
 
 ```bash
 PURGE_DEPS=0 bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/main/uninstall.sh)
@@ -104,9 +104,9 @@ PURGE_DEPS=0 bash <(curl -fsSL https://raw.githubusercontent.com/Ntungwa/ZiVPN/m
 
 ---
 
-🧹 Manual Cleanup (if needed)
+### 🧼 Manual Cleanup
 
-If the uninstall script fails or you want to clean up manually, these commands will remove all ZiVPN traces:
+If the uninstall script fails or you want to clean up manually:
 
 ```bash
 systemctl stop zivpn.service zivpn-api.service zivpn-bot.service badvpn-udpgw.service 2>/dev/null || true
@@ -119,14 +119,14 @@ iptables -t nat -D PREROUTING -i $(ip -4 route ls | awk '/default/ {print $5; ex
 
 ---
 
-📝 Logs
+## 📝 Logs
 
-· Installation log: /tmp/zivpn_install.log
-· Uninstallation log: /tmp/zivpn_uninstall.log
+· Installation log: `/tmp/zivpn_install.log`  
+· Uninstallation log: `/tmp/zivpn_uninstall.log`
 
 ---
 
-📁 Repository Structure
+## 📁 Repository Structure
 
 ```
 ZiVPN/
@@ -141,14 +141,12 @@ ZiVPN/
 
 ---
 
-📞 Support
+## 📞 Support
 
-For issues or questions, contact our Telegram channel: @Ntungwa
+For issues or questions, contact our Telegram channel: [@Ntungwa](https://t.me/Ntungwa)
 
 ---
 
-⚠️ Disclaimer
+## ⚠️ Disclaimer
 
 This project is provided as-is for educational and personal use. The developer is not responsible for any misuse or damages caused by this software.
-
-```
